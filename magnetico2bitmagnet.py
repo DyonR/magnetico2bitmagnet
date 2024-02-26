@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-__version__ = '2024.02.26b'
+__version__ = '2024.02.26c'
 
 import sqlite3
 import json
 import argparse
 import os
 
-def decode_with_fallback(byte_sequence, encodings=('utf-8', 'cp1251', 'latin1')):
+def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp', 'gbk', 'gb18030', 'cp1251', 'latin1')):
     """Attempt to decode a byte sequence using a list of encodings, falling back to a lossy decoding if necessary."""
     for encoding in encodings:
         try:
@@ -16,6 +16,21 @@ def decode_with_fallback(byte_sequence, encodings=('utf-8', 'cp1251', 'latin1'))
             continue
     # If all decodings fail, fall back to a lossy decoding using 'utf-8' with replacement characters for undecodable bytes
     return byte_sequence.decode('utf-8', errors='replace')
+
+# This function is called before opening the output file
+def ensure_directory_exists(output_file, auto_create_dir):
+    directory = os.path.dirname(output_file)
+    if directory and not os.path.exists(directory):
+        if auto_create_dir:
+            os.makedirs(directory)
+        else:
+            create_dir = input(f"The directory {directory} does not exist. Do you want to create it? [y/n] ").lower()
+            if create_dir == 'y':
+                os.makedirs(directory)
+                print(f"Directory {directory} created.")
+            else:
+                print("Directory creation aborted. Exiting.")
+                exit(1)
 
 def is_valid_sqlite3_file(filepath):
     """Check if the file at filepath is a valid SQLite3 database file."""
@@ -40,7 +55,16 @@ def check_database_structure(conn):
 
     return True, ""
 
-def main(database_path, test_mode):
+def generate_output_file_path(base_path, counter, split_size):
+    if counter == 0:
+        return base_path
+    else:
+        base_directory, original_filename = os.path.split(base_path)
+        filename, ext = os.path.splitext(original_filename)
+        new_filename = f"{filename}-{counter * split_size + 1}{ext}"
+        return os.path.join(base_directory, new_filename)
+
+def main(database_path, test_mode, output_file, split_size):
     """Check if the database path exists, is readable, and is a valid SQLite3 file"""
     if test_mode:
         print("Running in test mode. No JSON output will be printed.")
@@ -76,10 +100,20 @@ def main(database_path, test_mode):
     # Close the connection
     conn.close()
 
-    # Convert each row to a JSON object and print it
+    f = None
+    current_record = 0
+    file_counter = 0
+
     for row in rows:
+        if output_file and (current_record % split_size == 0):
+            ensure_directory_exists(output_file, args.auto_create_dir)
+            if f:
+                f.close()
+            new_output_file = generate_output_file_path(output_file, file_counter, split_size)
+            f = open(new_output_file, 'w')
+            file_counter += 1
+
         try:
-            # Decode potentially byte-encoded fields with fallbacks
             info_hash = row[0].decode('utf-8')
             name = decode_with_fallback(row[1])
             published_at = row[3].decode('utf-8')
@@ -91,19 +125,40 @@ def main(database_path, test_mode):
                 "publishedAt": published_at,
                 "source": "magnetico"
             }
-            json_data = json.dumps(data, ensure_ascii=False)
+            json_data = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+
             if not test_mode:
-                print(json_data)
-        except Exception as e: # If an error gets thrown, it will fail the import when piped to `curl`
+                if output_file:
+                    f.write(json_data + '\n')
+                else:
+                    print(json_data)
+            current_record += 1
+
+        except Exception as e:
             print(f"An error occurred: ", e)
             print(f"Problematic data: {row}")
+
+    if f:
+        f.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='magnetico2bitmagnet (m2b) processes a (magnetico) SQLite database to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('database_path', nargs='?', help='The path to the SQLite database file.\nIf not provided, the script will prompt for it.')
     parser.add_argument('-t', '--test', action='store_true', help='Enables test mode: process data without printing JSON output.\nUsed to check if no encoding errors occur.')
+    parser.add_argument('-o', '--to-file', help='Exports the JSON output to a file specified by this argument.')
+    parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires --to-file to be set.')
+    parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     args = parser.parse_args()
 
+    if args.to_file:
+        if args.split_size is None:
+            args.split_size = 1000000
+            print("--split-size has not been set, defaulting to 1000000.")
+    else:
+        if args.split_size is not None:
+            print("Warning: --split-size requires --to-file to be set. Ignoring --split-size.")
+        args.split_size = float('inf')
+
     db_path = args.database_path if args.database_path else input("Please enter the path to the database: ")
-    main(db_path, args.test)
+    main(db_path, args.test, args.to_file, args.split_size)
