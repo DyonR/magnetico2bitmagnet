@@ -5,6 +5,13 @@ magnetico2bitmagnet processes a (magnetico) SQLite database to extract and print
 - Converts and prints torrent data in a JSON format suitable for bitmagnet's import endpoint.
 - Verifies database integrity and structure before processing.
 - Optional test mode for validation without output.
+- Only imports the following per record:
+  - infohash
+  - name
+  - size
+  - discovered on (as 'published at', currently not visible in bitmagnet's WebUI)
+  - source (as magnetico)
+  - files per torrent are **NOT** imported due to a limition of bitmagnet's import endpoint
 
 ## Usage
 
