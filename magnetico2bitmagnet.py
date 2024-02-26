@@ -17,8 +17,8 @@ def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp
     # If all decodings fail, fall back to a lossy decoding using 'utf-8' with replacement characters for undecodable bytes
     return byte_sequence.decode('utf-8', errors='replace')
 
-# This function is called before opening the output file
 def ensure_directory_exists(output_file, auto_create_dir):
+    """Ensures that the output directory exists."""
     directory = os.path.dirname(output_file)
     if directory and not os.path.exists(directory):
         if auto_create_dir:
