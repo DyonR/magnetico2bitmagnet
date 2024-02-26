@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.02.26a'
+__version__ = '2024.02.26b'
 
 import sqlite3
 import json
@@ -55,6 +55,7 @@ def main(database_path, test_mode):
         print(f"Error: The file '{database_path}' is not a valid SQLite3 database.")
         exit(1)
 
+    # Connect to the SQLite database
     conn = sqlite3.connect(f'file:{database_path}?mode=ro', uri=True)
     valid_structure, error_message = check_database_structure(conn)
     if not valid_structure:
@@ -62,8 +63,6 @@ def main(database_path, test_mode):
         conn.close()
         exit(1)
 
-    # Connect to the SQLite database
-    conn = sqlite3.connect(f'file:{database_path}?mode=ro', uri=True)
     # Set text factory to bytes since decoding is handeled by `decode_with_fallback`
     conn.text_factory = bytes
     c = conn.cursor()
