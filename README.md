@@ -50,6 +50,8 @@ python3 magnetico2bitmagnet.py --test /path/to/magnetico/database.sqlite3
 ```
 python3 magnetico2bitmagnet.py /path/to/magnetico/database.sqlite3 | curl --verbose -H "Content-Type: application/json" -H "Connection: close" --data-binary @- http://192.168.2.0:3333/import
 ```
+**Note**: Importing millions of records will use a lot of RAM and will also take a really long time to import. This can take hours.
+After importing, bitmagnet will also classify all imported torrents before making them appear in the WebUI. This can take multiple days.
 
 ## Acknowledgments
 
