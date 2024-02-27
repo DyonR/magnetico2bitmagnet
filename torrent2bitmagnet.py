@@ -68,8 +68,20 @@ def get_torrent_details(torrent_path):
         print(f"Error processing {torrent_path}: {e}")
         return None
 
-def process_torrent_directory(directory_path, source, test_mode, output_file, split_size, auto_create_dir):
-    """Processes all .torrent files in the given directory."""
+def find_torrent_files(directory_path, recursive):
+    """Finds .torrent files in the given directory, optionally searching recursively."""
+    torrent_files = []
+    if recursive:
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                if file.endswith('.torrent'):
+                    torrent_files.append(os.path.join(root, file))
+    else:
+        torrent_files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith('.torrent')]
+    return torrent_files
+
+def process_torrent_directory(directory_path, source, test_mode, output_file, split_size, auto_create_dir, recursive):
+    """Processes all .torrent files in the given directory, optionally searching recursively."""
     if not os.path.exists(directory_path):
         print(f"Error: The directory path '{directory_path}' does not exist.")
         exit(1)
@@ -77,7 +89,8 @@ def process_torrent_directory(directory_path, source, test_mode, output_file, sp
         print(f"Error: The path '{directory_path}' is not a directory.")
         exit(1)
 
-    torrent_files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith('.torrent')]
+    torrent_files = find_torrent_files(directory_path, recursive)
+
     if not torrent_files:
         print("No .torrent files found in the directory.")
         return
@@ -132,18 +145,23 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires --to-file to be set.')
     parser.add_argument('--source', default='.torrent', help='Source tag for the output, default is ".torrent"')
     parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
-   
+    parser.add_argument('-r', '--recursive', action='store_true', help='Recursively find .torrent files in subdirectories.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     args = parser.parse_args()
-    
+
     if args.to_file:
         if args.split_size is None:
             args.split_size = 1000000
-            print("--split-size has not been set, defaulting to 1000000.")
+            print("--split-size has not been set. Defaulting to 1000000 records per file.")
+        elif args.split_size <= 0:
+            print("Error: --split-size must be a positive integer.")
+            exit(1)
     else:
         if args.split_size is not None:
             print("Warning: --split-size requires --to-file to be set. Ignoring --split-size.")
         args.split_size = float('inf')
 
-    torrent_directory_path = args.directory_path if args.directory_path else input("Please enter the path to the directory containing .torrent files: ")
-    process_torrent_directory(torrent_directory_path, args.source, args.test, args.to_file, args.split_size, args.auto_create_dir)
+    if not args.directory_path:
+        args.directory_path = input("Enter the directory path containing .torrent files: ").strip()
+
+    process_torrent_directory(args.directory_path, args.source, args.test, args.to_file, args.split_size, args.auto_create_dir, args.recursive)
