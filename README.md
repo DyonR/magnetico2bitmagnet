@@ -21,7 +21,7 @@ Usage examples are available [here](https://github.com/DyonR/magnetico2bitmagnet
 ## [torrent2database](https://github.com/DyonR/magnetico2bitmagnet/tree/main/torrent2database)
 
 This script searches (optionally recursively) for `.torrent` files in a specified directory and exports the required data for direct insertion into the PostgreSQL database used by bitmagnet.  
-Unlike the other scripts, file information **can** be imported.
+Unlike the other scripts, file information **can** be imported.  
 Usage examples are available [here](https://github.com/DyonR/magnetico2bitmagnet/tree/main/torrent2database).  
   
 ## Known Issues
