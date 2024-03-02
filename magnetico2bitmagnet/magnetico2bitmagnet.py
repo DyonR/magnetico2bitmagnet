@@ -1,11 +1,20 @@
 #!/usr/bin/env python
 
-__version__ = '2024.02.26c'
+__version__ = '2024.03.02a'
 
 import sqlite3
 import json
 import argparse
 import os
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='magnetico2bitmagnet processes a magnetico SQLite database to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('database_path', nargs='?', help='The path to the SQLite database file.\nIf not provided, the script will prompt for it.')
+    parser.add_argument('-o', '--output', '--to-file', help='Exports the JSON output to a file specified by this argument.')
+    parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires `--output` to be set.')
+    parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version.")
+    return parser.parse_args()
 
 def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp', 'gbk', 'gb18030', 'cp1251', 'latin1')):
     """Attempt to decode a byte sequence using a list of encodings, falling back to a lossy decoding if necessary."""
@@ -24,7 +33,7 @@ def ensure_directory_exists(output_file, auto_create_dir):
         if auto_create_dir:
             os.makedirs(directory)
         else:
-            create_dir = input(f"The directory {directory} does not exist. Do you want to create it? [y/n] ").lower()
+            create_dir = input(f"The directory {directory} does not exist. Do you want to create it? [y/n]: ").lower()
             if create_dir == 'y':
                 os.makedirs(directory)
                 print(f"Directory {directory} created.")
@@ -64,10 +73,8 @@ def generate_output_file_path(base_path, counter, split_size):
         new_filename = f"{filename}-{counter * split_size + 1}{ext}"
         return os.path.join(base_directory, new_filename)
 
-def main(database_path, test_mode, output_file, split_size):
+def main(database_path, output_file, split_size):
     """Check if the database path exists, is readable, and is a valid SQLite3 file"""
-    if test_mode:
-        print("Running in test mode. No JSON output will be printed.")
 
     if not os.path.exists(database_path):
         print(f"Error: The database path '{database_path}' does not exist.")
@@ -127,11 +134,10 @@ def main(database_path, test_mode, output_file, split_size):
             }
             json_data = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
-            if not test_mode:
-                if output_file:
-                    f.write(json_data + '\n')
-                else:
-                    print(json_data)
+            if output_file:
+                f.write(json_data + '\n')
+            else:
+                print(json_data)
             current_record += 1
 
         except Exception as e:
@@ -142,23 +148,14 @@ def main(database_path, test_mode, output_file, split_size):
         f.close()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='magnetico2bitmagnet (m2b) processes a (magnetico) SQLite database to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('database_path', nargs='?', help='The path to the SQLite database file.\nIf not provided, the script will prompt for it.')
-    parser.add_argument('-t', '--test', action='store_true', help='Enables test mode: process data without printing JSON output.\nUsed to check if no encoding errors occur.')
-    parser.add_argument('-o', '--to-file', help='Exports the JSON output to a file specified by this argument.')
-    parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires --to-file to be set.')
-    parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
-    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
-    args = parser.parse_args()
+    args = parse_arguments()
 
-    if args.to_file:
-        if args.split_size is None:
-            args.split_size = 1000000
-            print("--split-size has not been set, defaulting to 1000000.")
-    else:
-        if args.split_size is not None:
-            print("Warning: --split-size requires --to-file to be set. Ignoring --split-size.")
-        args.split_size = float('inf')
+    if not args.database_path:
+        print("Error: No .sqlite3 path provided. Please provide a path.\nRefer to the `--help` to see usage.")
+        exit(1)
 
-    db_path = args.database_path if args.database_path else input("Please enter the path to the database: ")
-    main(db_path, args.test, args.to_file, args.split_size)
+    if args.split_size is not None and args.split_size <= 0:
+        print(f"split-size must be a positive integer. '{args.split_size}' is invalid.")
+        exit(1)
+
+    main(args.database_path, args.output, args.split_size)

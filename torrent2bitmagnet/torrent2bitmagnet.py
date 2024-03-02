@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.02.28a'
+__version__ = '2024.03.02a'
 
 import json
 import argparse
@@ -8,6 +8,17 @@ import os
 import bencodepy
 import hashlib
 from datetime import datetime
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='torrent2bitmagnet processes a directory (recursively) with .torrent files in it to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('directory_path', nargs='?', help='The path to the directory containing .torrent files.')
+    parser.add_argument('-o', '--output', '--to-file', help='Exports the JSON output to a file specified by this argument.')
+    parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires `--output` to be set.')
+    parser.add_argument('--source', default='.torrent', help='"Torrent Source" how it will appear in bitmagnet, default is ".torrent"')
+    parser.add_argument('-r', '--recursive', action='store_true', help='Recursively find .torrent files in subdirectories of the <directory_path>.')
+    parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
+    return parser.parse_args()
 
 def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp', 'gbk', 'gb18030', 'cp1251', 'latin1')):
     """Attempt to decode a byte sequence using a list of encodings, falling back to a lossy decoding if necessary."""
@@ -80,7 +91,7 @@ def find_torrent_files(directory_path, recursive):
         torrent_files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith('.torrent')]
     return torrent_files
 
-def process_torrent_directory(directory_path, source, test_mode, output_file, split_size, auto_create_dir, recursive):
+def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive):
     """Processes all .torrent files in the given directory, optionally searching recursively."""
     if not os.path.exists(directory_path):
         print(f"Error: The directory path '{directory_path}' does not exist.")
@@ -95,7 +106,7 @@ def process_torrent_directory(directory_path, source, test_mode, output_file, sp
         if not recursive:
             print(f"Error: No .torrent files found in '{directory_path}'.")
         else:
-            print(f"Error: No .torrent files found in '{directory_path}' and the underlying directories.")            
+            print(f"Error: No .torrent files found in '{directory_path}' and the underlying directories.")
         return
             
 
@@ -131,47 +142,24 @@ def process_torrent_directory(directory_path, source, test_mode, output_file, sp
         # Convert the dictionary to JSON
         json_data = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
-        if not test_mode:
-            if output_file:
-                f.write(json_data + '\n')
-            else:
-                print(json_data)
+        if output_file:
+            f.write(json_data + '\n')
+        else:
+            print(json_data)
         current_record += 1
 
     if f:
         f.close()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Torrent Directory Processor: Extracts data from .torrent files in a directory to a JSON format supported by bitmagnet.', formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('directory_path', nargs='?', help='The path to the directory containing .torrent files.')
-    parser.add_argument('-t', '--test', action='store_true', help='Enables test mode: process data without printing JSON output.\nUsed to check if no encoding errors occur.')
-    parser.add_argument('-o', '--to-file', help='Exports the JSON output to a file specified by this argument.')
-    parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires --to-file to be set.')
-    parser.add_argument('--source', default='.torrent', help='Source tag for the output, default is ".torrent"')
-    parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
-    parser.add_argument('--verbose', action='store_true', help='Shows a couple lines that are normally not printed.\nInfo lines are hidden because this script is used for piping into `curl`.')
-    parser.add_argument('-r', '--recursive', action='store_true', help='Recursively find .torrent files in subdirectories.')
-    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
-    args = parser.parse_args()
+    args = parse_arguments()
 
     if not args.directory_path:
         print("Error: No .torrent directory path provided. Please provide a path.\nRefer to the `--help` to see usage.")
         exit(1)
 
-    if args.to_file:
-        if args.split_size is None or args.split_size <= 0:
-            # Set to a very large number to effectively disable splitting by default
-            args.split_size = float('inf')  # Treat as infinite split size
-            if args.split_size is None:
-                if args.verbose:
-                    print("Info: --split-size has not been set. Defaulting to no splitting of output files.")
-            else:
-                if args.verbose:
-                    print("Info: --split-size set to 0. No splitting of output files will occur.")
-    else:
-        if args.split_size is not None:
-            if args.verbose:
-                print("Info: --split-size requires --to-file to be set. Ignoring --split-size.")
-        args.split_size = float('inf')  # Ensure split_size is treated as infinite when not applicable
+    if args.split_size is not None and args.split_size <= 0:
+        print(f"split-size must be a positive integer. '{args.split_size}' is invalid.")
+        exit(1)
 
-    process_torrent_directory(args.directory_path, args.source, args.test, args.to_file, args.split_size, args.auto_create_dir, args.recursive)
+    process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive)
