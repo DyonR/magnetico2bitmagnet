@@ -17,10 +17,10 @@ tqdm
 charset_normalizer
 ```
 
-To install these packages, you can run the command below:
+To install these packages, you can run the command below:  
 `pip install bencodepy psycopg2-binary tqdm charset_normalizer` or `pip3 install bencodepy psycopg2-binary tqdm charset_normalizer`.
-
-Or, you can save the file [requirements.txt](https://raw.githubusercontent.com/DyonR/magnetico2bitmagnet/main/torrent2bitmagnet/requirements.txt) and run this command:
+  
+Or, you can save the file [requirements.txt](https://raw.githubusercontent.com/DyonR/magnetico2bitmagnet/main/torrent2database/requirements.txt) and run this command:  
 `pip install -r requirements.txt` or `pip3 install -r requirements.txt`
 
 ## Usage
