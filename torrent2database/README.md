@@ -7,6 +7,22 @@
 When you start the script, it runs without any confirmation. I've done extensive testing to make sure everything works as expected, but I can't guarantee a 100% flawless script.  
 A backup before running this script is very much recommened.  
 
+## Requirements
+
+The following pip packages are required:
+```
+bencodepy
+psycopg2-binary
+tqdm
+charset_normalizer
+```
+
+To install these packages, you can run the command below:
+`pip install bencodepy psycopg2-binary tqdm charset_normalizer` or `pip3 install bencodepy psycopg2-binary tqdm charset_normalizer`.
+
+Or, you can save the file [requirements.txt](https://raw.githubusercontent.com/DyonR/magnetico2bitmagnet/main/torrent2bitmagnet/requirements.txt) and run this command:
+`pip install -r requirements.txt` or `pip3 install -r requirements.txt`
+
 ## Usage
 
 To run the script, use the following command:

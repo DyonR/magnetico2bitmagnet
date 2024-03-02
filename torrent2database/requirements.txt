@@ -1,0 +1,4 @@
+bencodepy
+psycopg2-binary
+tqdm
+charset_normalizer

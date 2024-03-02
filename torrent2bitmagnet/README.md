@@ -2,6 +2,11 @@
 
 `torrent2bitmagnet` processes a directory (recursively) with .torrent files in it to extract and print data in a bitmagnet supported JSON format.
 
+## Requirements
+
+**bencodepy**:
+`pip install bencodepy` or `pip3 install bencodepy`
+
 ## Usage
 
 To run the script, use the following command:
