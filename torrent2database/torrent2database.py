@@ -15,6 +15,7 @@ from charset_normalizer import from_bytes
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="torrent2databse processes a directory (recursively) with .torrent files in it and inserts the data directory into the bitmagnet PostgreSQL database.")
+    parser.add_argument("directory_path", nargs='?', help="The path to the directory containing .torrent files.\\nIf not provided, the script will prompt for it.")
     parser.add_argument("--dbname", required=True, help="bitmagnet's database name in PostgreSQL.")
     parser.add_argument("--user", required=True, help="Username used to authenticate to PostgreSQL.")
     parser.add_argument("--password", required=True, help="Password used to authenticate to PostgreSQL.")
@@ -23,7 +24,7 @@ def parse_arguments():
     parser.add_argument("--source-name", required=True, help='"Torrent Source" how it will appear in bitmagnet.')
     parser.add_argument("--add-files", action="store_true", help="Add file data to the database?")
     parser.add_argument("--add-files-limit", type=int, default=500, help="Limit the number of files to add to the database.")
-    parser.add_argument("directory_path", nargs='?', help="The path to the directory containing .torrent files.\\nIf not provided, the script will prompt for it.")
+    parser.add_argument('--skip-negative', action='store_true', help='Rarely a bad .torrent can report a negative size, setting this skips those torrents.')
     parser.add_argument("-r", "--recursive", action="store_true", help='Recursively find .torrent files in subdirectories of the <directory_path>.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -176,11 +177,14 @@ def insert_source(conn, source_name):
         cur.close()
 
 
-def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit):
+def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit, skip_negative):
     torrent_paths = list(find_torrent_files(directory_path, recursive))
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
             torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit)
+            if (skip_negative and torrent_details[:-1][2] < 0):
+                pbar.update(1)
+                continue
             if torrent_details:
                 insert_torrent(conn, torrent_details[:-1])  # Exclude files_info from torrent_details
                 # Only run insert_torrent_files if file_status is not 'single' and there are files to insert
@@ -205,7 +209,7 @@ def main():
     conn = psycopg2.connect(**db_params)
     insert_source(conn, args.source_name)
     source_key = args.source_name.lower()
-    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit)
+    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit, args.skip_negative)
 
     if conn:
         conn.close()

@@ -16,6 +16,7 @@ def parse_arguments():
     parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires `--output` to be set.')
     parser.add_argument('--source', default='.torrent', help='"Torrent Source" how it will appear in bitmagnet, default is ".torrent"')
     parser.add_argument('-r', '--recursive', action='store_true', help='Recursively find .torrent files in subdirectories of the <directory_path>.')
+    parser.add_argument('--skip-negative', action='store_true', help='Rarely a bad .torrent can report a negative size, setting this skips those torrents.')
     parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -91,7 +92,7 @@ def find_torrent_files(directory_path, recursive):
         torrent_files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith('.torrent')]
     return torrent_files
 
-def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive):
+def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive, skip_negative):
     """Processes all .torrent files in the given directory, optionally searching recursively."""
     if not os.path.exists(directory_path):
         print(f"Error: The directory path '{directory_path}' does not exist.")
@@ -116,7 +117,7 @@ def process_torrent_directory(directory_path, source, output_file, split_size, a
 
     for torrent_path in torrent_files:
         details = get_torrent_details(torrent_path)
-        if details is None:
+        if details is None or (skip_negative and details[2] < 0):
             continue
         info_hash, name, total_size, creation_date = details
 
@@ -162,4 +163,4 @@ if __name__ == '__main__':
         print(f"split-size must be a positive integer. '{args.split_size}' is invalid.")
         exit(1)
 
-    process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive)
+    process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive, args.skip_negative)

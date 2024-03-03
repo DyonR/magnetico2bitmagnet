@@ -16,6 +16,7 @@ python3 magnetico2bitmagnet.py <path_to_database>
 - `-o`, `--output`, `--to-file`: Exports the JSON output to a file specified by this argument.
 - `-s`, `--split-size`: Splits the output into multiple files after a specified number of records. Requires `--output` to be set.
 - `--auto-create-dir`: Automatically creates the output directory if it does not exist, without prompting.
+- `--skip-negative`: Rarely a bad .torrent can report a negative size, setting this skips those torrents. If not passed, it will be imported with the reported negative size.
 - `-v`, `--version`: Displays the script's version.
 - `-h`, `--help`: Shows the help message.
 
