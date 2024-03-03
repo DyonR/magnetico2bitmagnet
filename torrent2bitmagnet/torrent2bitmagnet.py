@@ -119,6 +119,13 @@ def process_torrent_directory(directory_path, source, output_file, split_size, a
         details = get_torrent_details(torrent_path)
         if details is None or (skip_negative and details[2] < 0):
             continue
+        if details[2] < 0:
+            if skip_negative:
+                continue
+            else:
+                temp_details = list(details)
+                temp_details[2] = 0
+                details = tuple(temp_details)
         info_hash, name, total_size, creation_date = details
 
         if output_file and (current_record % split_size == 0):

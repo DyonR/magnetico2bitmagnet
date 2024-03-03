@@ -182,16 +182,19 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
             torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit)
-            if (skip_negative and torrent_details[:-1][2] < 0):
-                pbar.update(1)
-                continue
+            if (torrent_details[:-1][2] < 0):
+                if skip_negative:
+                    pbar.update(1)
+                    continue
+                else:
+                    torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
             if torrent_details:
                 insert_torrent(conn, torrent_details[:-1])  # Exclude files_info from torrent_details
                 # Only run insert_torrent_files if file_status is not 'single' and there are files to insert
                 if add_files and torrent_details[-1] and torrent_details[6] != "single":
                     insert_torrent_files(conn, torrent_details[0], torrent_details[-1])
-                    insert_torrent_source(conn, source_name, torrent_details[0], torrent_details[4])
-                    insert_torrent_content(conn, torrent_details[0], torrent_details[4])
+                insert_torrent_source(conn, source_name, torrent_details[0], torrent_details[4])
+                insert_torrent_content(conn, torrent_details[0], torrent_details[4])
             pbar.update(1)
 
 def main():
