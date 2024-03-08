@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.08a'
+__version__ = '2024.03.08b'
 
 import json
 import argparse
@@ -42,7 +42,7 @@ def ensure_directory_exists(output_file, auto_create_dir):
             create_dir = input(f"The directory {directory} does not exist. Do you want to create it? [y/n]: ").lower()
             if create_dir == 'y':
                 os.makedirs(directory)
-                print(f"Directory {directory} created.")
+                print(f"Directory '{directory}' created.")
             else:
                 print("Directory creation aborted. Exiting.")
                 exit(1)
@@ -78,7 +78,7 @@ def get_torrent_details(torrent_path):
         name = decode_with_fallback(info_dict[b'name'])
         return info_hash, name, total_size, creation_date
     except Exception as e:
-        print(f"Error processing {torrent_path}: {e}", file=sys.stderr)
+        print(f"Error processing '{torrent_path}': {e}", file=sys.stderr)
         return None
 
 def find_torrent_files(directory_path, recursive):
@@ -96,19 +96,19 @@ def find_torrent_files(directory_path, recursive):
 def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive, negative_to_zero):
     """Processes all .torrent files in the given directory, optionally searching recursively."""
     if not os.path.exists(directory_path):
-        print(f"Error: The directory path '{directory_path}' does not exist.")
+        print(f"Error: The directory path '{directory_path}' does not exist.", file=sys.stderr)
         exit(1)
     if not os.path.isdir(directory_path):
-        print(f"Error: The path '{directory_path}' is not a directory.")
+        print(f"Error: The path '{directory_path}' is not a directory.", file=sys.stderr)
         exit(1)
 
     torrent_files = find_torrent_files(directory_path, recursive)
 
     if not torrent_files:
         if not recursive:
-            print(f"Error: No .torrent files found in '{directory_path}'.")
+            print(f"Error: No .torrent files found in '{directory_path}'.", file=sys.stderr)
         else:
-            print(f"Error: No .torrent files found in '{directory_path}' and the underlying directories.")
+            print(f"Error: No .torrent files found in '{directory_path}' and the underlying directories.", file=sys.stderr)
         return
             
 
@@ -126,7 +126,7 @@ def process_torrent_directory(directory_path, source, output_file, split_size, a
                 temp_details[2] = 0
                 details = tuple(temp_details)
             else:
-                print(f"Unable to process {torrent_path}, metadata contains a negative 'size' value.", file=sys.stderr)
+                print(f"Unable to process '{torrent_path}', metadata contains a negative 'size' value.", file=sys.stderr)
                 continue
         info_hash, name, total_size, creation_date = details
 
@@ -165,11 +165,11 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     if not args.directory_path:
-        print("Error: No .torrent directory path provided. Please provide a path.\nRefer to the `--help` to see usage.")
+        print("Error: No .torrent directory path provided. Please provide a path.\nRefer to the `--help` to see usage.", file=sys.stderr)
         exit(1)
 
     if args.split_size is not None and args.split_size <= 0:
-        print(f"split-size must be a positive integer. '{args.split_size}' is invalid.")
+        print(f"split-size must be a positive integer. '{args.split_size}' is invalid.", file=sys.stderr)
         exit(1)
 
     process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive, args.negative_to_zero)
