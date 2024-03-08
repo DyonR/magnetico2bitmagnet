@@ -8,7 +8,6 @@ import os
 import bencodepy
 import hashlib
 from datetime import datetime
-import sys
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='torrent2bitmagnet processes a directory (recursively) with .torrent files in it to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
@@ -17,7 +16,7 @@ def parse_arguments():
     parser.add_argument('-s', '--split-size', type=int, help='Splits the output into multiple files after a specified number of records. Requires `--output` to be set.')
     parser.add_argument('--source', default='.torrent', help='"Torrent Source" how it will appear in bitmagnet, default is ".torrent"')
     parser.add_argument('-r', '--recursive', action='store_true', help='Recursively find .torrent files in subdirectories of the <directory_path>.')
-    parser.add_argument('--negative-to-zero', action='store_true', help='Rarely a bad .torrent can report a negative size. Set this argument to set the size to "0" to allow importing them.')
+    parser.add_argument('--skip-negative', action='store_true', help='Rarely a bad .torrent can report a negative size, setting this skips those torrents.')
     parser.add_argument('--auto-create-dir', action='store_true', help='Automatically create the output directory if it does not exist, without prompting.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -78,7 +77,7 @@ def get_torrent_details(torrent_path):
         name = decode_with_fallback(info_dict[b'name'])
         return info_hash, name, total_size, creation_date
     except Exception as e:
-        print(f"Error processing {torrent_path}: {e}", file=sys.stderr)
+        print(f"Error processing {torrent_path}: {e}")
         return None
 
 def find_torrent_files(directory_path, recursive):
@@ -93,7 +92,7 @@ def find_torrent_files(directory_path, recursive):
         torrent_files = [os.path.join(directory_path, f) for f in os.listdir(directory_path) if f.endswith('.torrent')]
     return torrent_files
 
-def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive, negative_to_zero):
+def process_torrent_directory(directory_path, source, output_file, split_size, auto_create_dir, recursive, skip_negative):
     """Processes all .torrent files in the given directory, optionally searching recursively."""
     if not os.path.exists(directory_path):
         print(f"Error: The directory path '{directory_path}' does not exist.")
@@ -118,16 +117,15 @@ def process_torrent_directory(directory_path, source, output_file, split_size, a
 
     for torrent_path in torrent_files:
         details = get_torrent_details(torrent_path)
-        if details is None:
+        if details is None or (skip_negative and details[2] < 0):
             continue
-        if details[2] < 0: # Torrent has a negative size
-            if negative_to_zero:
+        if details[2] < 0:
+            if skip_negative:
+                continue
+            else:
                 temp_details = list(details)
                 temp_details[2] = 0
                 details = tuple(temp_details)
-            else:
-                print(f"Unable to process {torrent_path}, metadata contains a negative 'size' value.", file=sys.stderr)
-                continue
         info_hash, name, total_size, creation_date = details
 
         if output_file and (current_record % split_size == 0):
@@ -172,4 +170,4 @@ if __name__ == '__main__':
         print(f"split-size must be a positive integer. '{args.split_size}' is invalid.")
         exit(1)
 
-    process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive, args.negative_to_zero)
+    process_torrent_directory(args.directory_path, args.source, args.output, args.split_size, args.auto_create_dir, args.recursive, args.skip_negative)
