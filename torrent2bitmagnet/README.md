@@ -23,7 +23,7 @@ python3 torrent2bitmagnet.py <directory_path>
 - `--source`: "Torrent Source" how it will appear in bitmagnet, default is ".torrent".
 - `-r`, `--recursive`: Recursively find .torrent files in subdirectories of the <directory_path>.
 - `--auto-create-dir`: Automatically creates the output directory if it does not exist, without prompting.
-- `--skip-negative`: Rarely a bad .torrent can report a negative size, setting this skips those torrents. If not passed, it will be imported with the reported negative size.
+- `--negative-to-zero`: Rarely a bad .torrent can report a negative size. Set this argument to set the size to "0" to allow importing them.
 - `-v`, `--version`: Displays the script's version.
 - `-h`, `--help`: Shows the help message.
 
