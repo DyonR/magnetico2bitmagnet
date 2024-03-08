@@ -96,6 +96,7 @@ def insert_torrent_files(conn, info_hash, files_info):
     except Exception as e:
         conn.rollback()
         print(f"Error inserting torrent files into the database: {e}")
+        print(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -122,7 +123,7 @@ def insert_torrent_source(conn, source, info_hash, creation_date,):
     except Exception as e:
         conn.rollback()
         print(f"Error inserting torrent source into the database: {e}")
-        exit(1)
+        print(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -142,6 +143,7 @@ def insert_torrent_content(conn, info_hash, creation_date):
     except Exception as e:
         conn.rollback()
         print(f"Error inserting torrent content into the database: {e}")
+        print(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -182,6 +184,9 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
             torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit)
+            if None == torrent_details:
+                pbar.update(1)
+                continue
             if (torrent_details[:-1][2] < 0):
                 if skip_negative:
                     pbar.update(1)
