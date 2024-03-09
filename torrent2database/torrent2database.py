@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.08a'
+__version__ = '2024.03.09b'
 
 import argparse
 import os
@@ -23,9 +23,10 @@ def parse_arguments():
     parser.add_argument("--port", required=True, help="PostgreSQL port.")
     parser.add_argument("--source-name", required=True, help='"Torrent Source" how it will appear in bitmagnet.')
     parser.add_argument("--add-files", action="store_true", help="Add file data to the database?")
-    parser.add_argument("--add-files-limit", type=int, default=500, help="Limit the number of files to add to the database.")
+    parser.add_argument("--add-files-limit", type=int, default=100, help="Limit the number of files to add to the database.")
     parser.add_argument('--negative-to-zero', action='store_true', help='Torrents with a negative "size" are skipped, they make the bitmagnet WebUI unable to load.\nBy default, torrents with a negative size are skipped.')
-    parser.add_argument('--force-import-negative', action='store_true', help='Force insert torrents with a negative size into the database.')
+    parser.add_argument('--force-import-negative', action='store_true', help='Force insert torrents with a negative size into the database (not recommended).')
+    parser.add_argument('--import-padding', action='store_true', help='Handle padding files as normal files (not recommended).')
     parser.add_argument("-r", "--recursive", action="store_true", help='Recursively find .torrent files in subdirectories of the <directory_path>.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -47,18 +48,14 @@ def find_torrent_files(directory_path, recursive):
     else:
         return Path(directory_path).glob('*.torrent')
 
-def get_torrent_details(torrent_path, add_files, add_files_limit):
+def get_torrent_details(torrent_path, add_files, add_files_limit, import_padding):
     try:
         torrent_data = bencodepy.decode_from_file(torrent_path)
         info_dict = torrent_data[b'info']
         info_encoded = bencodepy.encode(info_dict)
         info_hash = hashlib.sha1(info_encoded).digest()
         try:
-            creation_date = torrent_data[b'creation date']
-            if creation_date:
-                creation_date = datetime.utcfromtimestamp(creation_date).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-            else:
-                creation_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            creation_date = datetime.utcfromtimestamp(torrent_data[b'creation date']).strftime('%Y-%m-%dT%H:%M:%S.000Z')
         except:
             creation_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
         file_status = "single" if b'length' in info_dict else "multi"
@@ -68,12 +65,18 @@ def get_torrent_details(torrent_path, add_files, add_files_limit):
 
         if file_status == "multi":
             files_count = len(info_dict[b'files'])
-            for index, file in enumerate(info_dict[b'files'][:add_files_limit]):
+            files_info = []
+            actual_files_count = 0
+            total_size = sum(file[b'length'] for file in info_dict[b'files'])
+            for file in info_dict[b'files']:
                 file_path = os.path.join(*[decode_with_fallback(part) for part in file[b'path']])
                 file_size = file[b'length']
-                total_size += file_size
-                if "_____padding" not in file_path and ".____padding" not in file_path:
-                    files_info.append((index, file_path, file_size))
+
+                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and actual_files_count < add_files_limit:
+                    files_info.append((actual_files_count, file_path, file_size))
+                    actual_files_count += 1 
+                if actual_files_count >= add_files_limit:
+                    break
         else:
             total_size = info_dict[b'length']
             if add_files:
@@ -192,11 +195,11 @@ def insert_source(conn, source_name):
         cur.close()
 
 
-def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit, negative_to_zero, force_import_negative):
+def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit, negative_to_zero, force_import_negative, import_padding):
     torrent_paths = list(find_torrent_files(directory_path, recursive))
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
-            torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit)
+            torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit, import_padding)
             if None == torrent_details:
                 pbar.update(1)
                 continue
@@ -212,7 +215,6 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
                 if force_import_negative and (torrent_details[:-1][2] < 0):
                     print(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
             if torrent_details:
-                #print(torrent_details[:-1])
                 insert_torrent_succeeded = insert_torrent(conn, torrent_details[:-1], torrent_path)  # Exclude files_info from torrent_details
                 if not insert_torrent_succeeded:
                     pbar.update(1)
@@ -245,7 +247,7 @@ def main():
     conn = psycopg2.connect(**db_params)
     insert_source(conn, args.source_name)
     source_key = args.source_name.lower()
-    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit, args.negative_to_zero, args.force_import_negative)
+    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit, args.negative_to_zero, args.force_import_negative, args.import_padding)
 
     if conn:
         conn.close()
