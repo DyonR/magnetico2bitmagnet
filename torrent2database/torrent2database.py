@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.09b'
+__version__ = '2024.03.09c'
 
 import argparse
 import os
@@ -234,6 +234,15 @@ def main():
     if args.negative_to_zero and args.force_import_negative:
         print(f"[ERROR]|[ARGS]: --negative-to-zero and --force-import-negative may not be used together.")
         exit(1)
+    if not args.add_files:
+        print(f"[INFO]|[ARGS]: --add-files is not set. Setting this is recommeneded. If you don't set this, 'mutli file' torrents will be imported as '0 files'.")
+        print(f"[INFO]|[ARGS]: The total size of a torrent will be calculated and imported either way.")
+        mutli_as_zero = input(f"[INFO]|[ARGS]: Import 'mutli file' torrents as '0 files'? [y/n]: ").lower()
+        if mutli_as_zero == 'y':
+            print(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
+        else:
+            print("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
+            exit(1)
     if not args.directory_path:
         args.directory_path = input("Enter the directory path containing .torrent files: ")
 
