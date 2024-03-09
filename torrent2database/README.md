@@ -43,8 +43,8 @@ python3 torrent2database.py -h
 - `--add-files`: Add file data to the database?
 - `--add-files-limit ADD_FILES_LIMIT`: Limit the number of files to add to the database.
 - `--negative-to-zero`: Torrents with a negative "size" are skipped, they make the bitmagnet WebUI unable to load. By default, torrents with a negative size are skipped.
-- `--force-import-negative`: Force insert torrents with a negative size into the database.
-- `--import-padding`: Handle padding files as normal files (ex: `_____padding_file_0_if you see this file, please update to BitComet 0.85 or above____`).
+- `--force-import-negative`: Force insert torrents with a negative size into the database (not recommended).
+- `--import-padding`: Handle padding files as normal files (not recommended) (ex: `_____padding_file_0_if you see this file, please update to BitComet 0.85 or above____`).
 - `-r, --recursive`: Recursively find .torrent files in subdirectories of the `<directory_path>`.
 
 
