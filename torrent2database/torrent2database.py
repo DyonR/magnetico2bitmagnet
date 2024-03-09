@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.09c'
+__version__ = '2024.03.09d'
 
 import argparse
 import os
@@ -190,6 +190,7 @@ def insert_source(conn, source_name):
     except Exception as e:
         conn.rollback()
         print(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
+        cur.close()
         exit(1)
     finally:
         cur.close()
@@ -199,32 +200,31 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
     torrent_paths = list(find_torrent_files(directory_path, recursive))
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
-            torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit, import_padding)
-            if None == torrent_details:
-                pbar.update(1)
-                continue
-            if not force_import_negative and (torrent_details[:-1][2] < 0): # If the torrent size is negative
-                if negative_to_zero:
-                    print(f"[INFO]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', setting it to '0'.")
-                    torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
+            try:
+                torrent_details = get_torrent_details(torrent_path, add_files, add_files_limit, import_padding)
+                if None == torrent_details:
+                    continue
+                if not force_import_negative and (torrent_details[:-1][2] < 0): # If the torrent size is negative
+                    if negative_to_zero:
+                        print(f"[INFO]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', setting it to '0'.")
+                        torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
+                    else:
+                        print(f"[ERROR]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', not importing.")
+                        continue
                 else:
-                    print(f"[ERROR]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', not importing.")
-                    pbar.update(1)
-                    continue
-            else:
-                if force_import_negative and (torrent_details[:-1][2] < 0):
-                    print(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
-            if torrent_details:
-                insert_torrent_succeeded = insert_torrent(conn, torrent_details[:-1], torrent_path)  # Exclude files_info from torrent_details
-                if not insert_torrent_succeeded:
-                    pbar.update(1)
-                    continue
-                # Only run insert_torrent_files if file_status is not 'single' and there are files to insert
-                if add_files and torrent_details[-1] and torrent_details[6] != "single":
-                    insert_torrent_files(conn, torrent_details[0], torrent_details[-1], torrent_path)
-                insert_torrent_source(conn, source_name, torrent_details[0], torrent_details[4])
-                insert_torrent_content(conn, torrent_details[0], torrent_details[4])
-            pbar.update(1)
+                    if force_import_negative and (torrent_details[:-1][2] < 0):
+                        print(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
+                if torrent_details:
+                    insert_torrent_succeeded = insert_torrent(conn, torrent_details[:-1], torrent_path)  # Exclude files_info from torrent_details
+                    if not insert_torrent_succeeded:
+                        continue
+                    # Only run insert_torrent_files if file_status is not 'single' and there are files to insert
+                    if add_files and torrent_details[-1] and torrent_details[6] != "single":
+                        insert_torrent_files(conn, torrent_details[0], torrent_details[-1], torrent_path)
+                    insert_torrent_source(conn, source_name, torrent_details[0], torrent_details[4])
+                    insert_torrent_content(conn, torrent_details[0], torrent_details[4])
+            finally:
+                pbar.update(1)
 
 def main():
     args = parse_arguments()
