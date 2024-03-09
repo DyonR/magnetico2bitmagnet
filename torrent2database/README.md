@@ -42,6 +42,8 @@ python3 torrent2database.py -h
 - `--source-name SOURCE_NAME`: "Torrent Source" how it will appear in bitmagnet.
 - `--add-files`: Add file data to the database?
 - `--add-files-limit ADD_FILES_LIMIT`: Limit the number of files to add to the database.
+- `--negative-to-zero`: Torrents with a negative "size" are skipped, they make the bitmagnet WebUI unable to load. By default, torrents with a negative size are skipped.
+- `--force-import-negative`: Force insert torrents with a negative size into the database.
 - `-r, --recursive`: Recursively find .torrent files in subdirectories of the `<directory_path>`.
 
 

@@ -15,7 +15,7 @@ from charset_normalizer import from_bytes
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="torrent2databse processes a directory (recursively) with .torrent files in it and inserts the data directory into the bitmagnet PostgreSQL database.")
-    parser.add_argument("directory_path", nargs='?', help="The path to the directory containing .torrent files.\\nIf not provided, the script will prompt for it.")
+    parser.add_argument("directory_path", nargs='?', help="The path to the directory containing .torrent files.\nIf not provided, the script will prompt for it.")
     parser.add_argument("--dbname", required=True, help="bitmagnet's database name in PostgreSQL.")
     parser.add_argument("--user", required=True, help="Username used to authenticate to PostgreSQL.")
     parser.add_argument("--password", required=True, help="Password used to authenticate to PostgreSQL.")
@@ -24,7 +24,8 @@ def parse_arguments():
     parser.add_argument("--source-name", required=True, help='"Torrent Source" how it will appear in bitmagnet.')
     parser.add_argument("--add-files", action="store_true", help="Add file data to the database?")
     parser.add_argument("--add-files-limit", type=int, default=500, help="Limit the number of files to add to the database.")
-    parser.add_argument('--skip-negative', action='store_true', help='Rarely a bad .torrent can report a negative size, setting this skips those torrents.')
+    parser.add_argument('--negative-to-zero', action='store_true', help='Torrents with a negative "size" are skipped, they make the bitmagnet WebUI unable to load.\nBy default, torrents with a negative size are skipped.')
+    parser.add_argument('--force-import-negative', action='store_true', help='Force insert torrents with a negative size into the database.')
     parser.add_argument("-r", "--recursive", action="store_true", help='Recursively find .torrent files in subdirectories of the <directory_path>.')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -82,10 +83,13 @@ def get_torrent_details(torrent_path, add_files, add_files_limit):
         name = decode_with_fallback(info_dict[b'name'])
         return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
     except Exception as e:
-        print(f"Error processing {torrent_path}: {e}")
+        if str(e) == "b'name'":
+            print(f"[ERROR]|[DETAILS]: '{torrent_path}': torrent 'name' is empty.")
+        else:
+            print(f"[ERROR]|[DETAILS]: Unknown error '{torrent_path}': {e}")
         return None
 
-def insert_torrent_files(conn, info_hash, files_info):
+def insert_torrent_files(conn, info_hash, files_info, torrent_path):
     sql_command = ("INSERT INTO torrent_files (info_hash, index, path, size, created_at, updated_at) "
                    "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash, path) DO NOTHING")
     cur = conn.cursor()
@@ -95,24 +99,32 @@ def insert_torrent_files(conn, info_hash, files_info):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Error inserting torrent files into the database: {e}")
-        print(f"Torrent source of the error: {info_hash.hex()}\n")
+        if str(e) ==  'A string literal cannot contain NUL (0x00) characters.':
+            print(f"[ERROR]|[FILE]: '{torrent_path}': filelist contains empty or invalid names.")
+        else:
+            print(f"[ERROR]|[FILE]: Unknown error {torrent_path}': {e}")
     finally:
         cur.close()
 
-def insert_torrent(conn, torrent_details):
+def insert_torrent(conn, torrent_details, torrent_path):
     sql_command = ("INSERT INTO torrents (info_hash, name, size, private, created_at, updated_at, files_status, files_count) "
                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash) DO NOTHING")
     cur = conn.cursor()
     try:
         cur.execute(sql.SQL(sql_command), torrent_details)
         conn.commit()
+        return True
     except Exception as e:
         conn.rollback()
+        if str(e) == "A string literal cannot contain NUL (0x00) characters.":
+            print(f"[ERROR]|[TORRENT]: '{torrent_path}': torrent 'name' is an invalid string.")
+        else:
+            print(f"[ERROR]|[TORRENT]: Unknown error'{torrent_path}': {e}")
+        return False
     finally:
         cur.close()
 
-def insert_torrent_source(conn, source, info_hash, creation_date,):
+def insert_torrent_source(conn, source, info_hash, creation_date):
     sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, import_id, bfsd, bfpe, seeders, leechers, published_at, created_at, updated_at) "
                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source, info_hash) DO NOTHING")
     values = (source, info_hash, None, None, None, None, None, creation_date, creation_date, creation_date)
@@ -163,7 +175,7 @@ def insert_source(conn, source_name):
     timestamp_now = datetime.now(timezone.utc)
     
     if check_source_exists(conn, source_key):
-        print(f"Source '{source_name}' already exists in the database.")
+        print(f"[INFO]|[SOURCE]: '{source_name}' already exists.")
         return
     
     cur = conn.cursor()
@@ -171,15 +183,16 @@ def insert_source(conn, source_name):
         cur.execute(sql.SQL("INSERT INTO torrent_sources (key, name, created_at, updated_at) VALUES (%s, %s, %s, %s)"),
                     (source_key, source_name, timestamp_now, timestamp_now))
         conn.commit()
-        print(f"Source '{source_name}' successfully added to the database.")
+        print(f"[INFO]|[SOURCE]: '{source_name}' successfully added.")
     except Exception as e:
         conn.rollback()
-        print(f"Error inserting source into the database: {e}")
+        print(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
+        exit(1)
     finally:
         cur.close()
 
 
-def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit, skip_negative):
+def process_torrent_files(directory_path, recursive, conn, source_name, add_files, add_files_limit, negative_to_zero, force_import_negative):
     torrent_paths = list(find_torrent_files(directory_path, recursive))
     with tqdm(total=len(torrent_paths), desc="Processing Torrent Files") as pbar:
         for torrent_path in torrent_paths:
@@ -187,23 +200,38 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
             if None == torrent_details:
                 pbar.update(1)
                 continue
-            if (torrent_details[:-1][2] < 0):
-                if skip_negative:
+            if not force_import_negative and (torrent_details[:-1][2] < 0): # If the torrent size is negative
+                if negative_to_zero:
+                    print(f"[INFO]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', setting it to '0'.")
+                    torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
+                else:
+                    print(f"[ERROR]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', not importing.")
                     pbar.update(1)
                     continue
-                else:
-                    torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
+            else:
+                if force_import_negative and (torrent_details[:-1][2] < 0):
+                    print(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
             if torrent_details:
-                insert_torrent(conn, torrent_details[:-1])  # Exclude files_info from torrent_details
+                #print(torrent_details[:-1])
+                insert_torrent_succeeded = insert_torrent(conn, torrent_details[:-1], torrent_path)  # Exclude files_info from torrent_details
+                if not insert_torrent_succeeded:
+                    pbar.update(1)
+                    continue
                 # Only run insert_torrent_files if file_status is not 'single' and there are files to insert
                 if add_files and torrent_details[-1] and torrent_details[6] != "single":
-                    insert_torrent_files(conn, torrent_details[0], torrent_details[-1])
+                    insert_torrent_files(conn, torrent_details[0], torrent_details[-1], torrent_path)
                 insert_torrent_source(conn, source_name, torrent_details[0], torrent_details[4])
                 insert_torrent_content(conn, torrent_details[0], torrent_details[4])
             pbar.update(1)
 
 def main():
     args = parse_arguments()
+    if len(args.source_name) == 0:
+        print(f"[ERROR]|[ARGS]: --source is set to an empty string.")
+        exit(1)
+    if args.negative_to_zero and args.force_import_negative:
+        print(f"[ERROR]|[ARGS]: --negative-to-zero and --force-import-negative may not be used together.")
+        exit(1)
     if not args.directory_path:
         args.directory_path = input("Enter the directory path containing .torrent files: ")
 
@@ -217,7 +245,7 @@ def main():
     conn = psycopg2.connect(**db_params)
     insert_source(conn, args.source_name)
     source_key = args.source_name.lower()
-    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit, args.skip_negative)
+    process_torrent_files(args.directory_path, args.recursive, conn, source_key, args.add_files, args.add_files_limit, args.negative_to_zero, args.force_import_negative)
 
     if conn:
         conn.close()
