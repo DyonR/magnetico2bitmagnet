@@ -123,8 +123,6 @@ def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, file
 
                 if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and file_index < add_files_limit:
                     files_info.append((file_index, file_path, file_size))
-                    if magnetico_torrent_data[0] == 72:
-                        print(f"{file_index}: {file_path}" )
                 file_index += 1
                 if file_index > add_files_limit:
                     file_status = 'over_threshold'
