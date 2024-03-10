@@ -52,8 +52,8 @@ def insert_torrent_content(pg_conn, info_hash, creation_date):
         pg_conn.commit()
     except Exception as e:
         pg_conn.rollback()
-        print(f"Error inserting torrent content into the database: {e}")
-        print(f"Torrent source of the error: {info_hash.hex()}\n")
+        tqdm.write(f"Error inserting torrent content into the database: {e}")
+        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -67,8 +67,8 @@ def insert_torrent_source(pg_conn, source, info_hash, creation_date):
         pg_conn.commit()
     except Exception as e:
         pg_conn.rollback()
-        print(f"Error inserting torrent source into the database: {e}")
-        print(f"Torrent source of the error: {info_hash.hex()}\n")
+        tqdm.write(f"Error inserting torrent source into the database: {e}")
+        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -82,7 +82,7 @@ def insert_torrent_files(pg_conn, info_hash, files_info):
         pg_conn.commit()
     except Exception as e:
         pg_conn.rollback()
-        print(f"[ERROR]|[FILE]: Unknown error: {e}")
+        tqdm.write(f"[ERROR]|[FILE]: Unknown error: {e}")
     finally:
         cur.close()
 
@@ -96,7 +96,7 @@ def insert_torrent(pg_conn, torrent_details):
         return True
     except Exception as e:
         pg_conn.rollback()
-        print(e)
+        tqdm.write(e)
         return False
     finally:
         cur.close()
@@ -113,7 +113,6 @@ def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, file
         if files_count == 1:
             files_count = None
             file_status = 'single'
-
         files_info = []
         if file_status == "multi":
             file_index = 0
@@ -131,14 +130,14 @@ def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, file
             if add_files:
                 files_info.append((0, name, total_size))
     except Exception as e:
-        print(e)
+        tqdm.write(f"{e}")
     return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
 
 def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name, add_files, add_files_limit, insert_content, import_padding, force_import, batch_size=1000):
     sqlite_conn.text_factory = bytes
-    print("[INFO]|[SQLite]: Getting amount of records...")
+    tqdm.write("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
-    print(f"[INFO]|[SQLite]: Found {total_count} records in the database.")
+    tqdm.write(f"[INFO]|[SQLite]: Found {total_count} records in the database.")
 
     with tqdm(total=total_count, desc="Processing magnetico records") as pbar:
         offset = 0
@@ -160,9 +159,9 @@ def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name,
                         all_empty = all(second == b'' for _, second in files)
                         if all_empty:
                             if force_import:
-                                print(f"\nTorrent with id {torrent[0]} only contains empty filenames, force importing.")
+                                tqdm.write(f"[INFO]|[DATA]: Record with id {torrent[0]} only contains empty filenames, force importing.")
                             if not force_import:
-                                print(f"\nTorrent with id {torrent[0]} only contains empty filenames, skipping.")
+                                tqdm.write(f"[INFO]|[DATA]: Record with id {torrent[0]} only contains empty filenames, skipping.")
                                 continue
                         files_count = len(files)
                         files_cursor.close()
@@ -195,7 +194,7 @@ def insert_source(pg_conn, source_name):
     timestamp_now = datetime.now(timezone.utc)
     
     if check_source_exists(pg_conn, source_key):
-        print(f"[INFO]|[SOURCE]: '{source_name}' already exists.")
+        tqdm.write(f"[INFO]|[SOURCE]: '{source_name}' already exists.")
         return
     
     cur = pg_conn.cursor()
@@ -203,10 +202,10 @@ def insert_source(pg_conn, source_name):
         cur.execute(sql.SQL("INSERT INTO torrent_sources (key, name, created_at, updated_at) VALUES (%s, %s, %s, %s)"),
                     (source_key, source_name, timestamp_now, timestamp_now))
         pg_conn.commit()
-        print(f"[INFO]|[SOURCE]: '{source_name}' successfully added.")
+        tqdm.write(f"[INFO]|[SOURCE]: '{source_name}' successfully added.")
     except Exception as e:
         pg_conn.rollback()
-        print(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
+        tqdm.write(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
         cur.close()
         exit(1)
     finally:
@@ -238,47 +237,47 @@ def main():
     args = parse_arguments()
 
     if len(args.source_name) == 0:
-        print(f"[ERROR]|[ARGS]: --source is set to an empty string.")
+        tqdm.write(f"[ERROR]|[ARGS]: --source is set to an empty string.")
         exit(1)
     if not args.add_files:
-        print(f"[INFO]|[ARGS]: --add-files is not set. Setting this is recommeneded. If you don't set this, 'mutli file' torrents will be imported as '0 files'.")
-        print(f"[INFO]|[ARGS]: The total size of a torrent will be calculated and imported either way.")
+        tqdm.write(f"[INFO]|[ARGS]: --add-files is not set. Setting this is recommeneded. If you don't set this, 'mutli file' torrents will be imported as '0 files'.")
+        tqdm.write(f"[INFO]|[ARGS]: The total size of a torrent will be calculated and imported either way.")
         mutli_as_zero = input(f"[INFO]|[ARGS]: Import 'mutli file' torrents as '0 files'? [y/n]: ").lower()
         if mutli_as_zero == 'y':
-            print(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
+            tqdm.write(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
         else:
-            print("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
+            tqdm.write("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
             exit(1)
     if not args.insert_content:
-        print(f"[INFO]|[ARGS]: --insert-content is not set. Torrents will not show up in the WebUI until `bitmagnet reprocess` has ran.")
-        print(f"[INFO]|[ARGS]: Enabling --insert-content makes infohashes directly searchable. Either way does `bitmagnet reprocess` need to run to have them searchable.")
+        tqdm.write(f"[INFO]|[ARGS]: --insert-content is not set. Torrents will not show up in the WebUI until `bitmagnet reprocess` has ran.")
+        tqdm.write(f"[INFO]|[ARGS]: Enabling --insert-content makes infohashes directly searchable. Either way does `bitmagnet reprocess` need to run to have them searchable.")
         no_insert_content = input(f"[INFO]|[ARGS]: Do you want to continue without inserting content? [y/n]: ").lower()
         if no_insert_content == 'y':
-            print(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
+            tqdm.write(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
         else:
-            print("[INFO]|[ARGS]: Please set --insert-content to acknowledge your choice.")
+            tqdm.write("[INFO]|[ARGS]: Please set --insert-content to acknowledge your choice.")
             exit(1)
 
     if not args.database_path:
         args.database_path = input("Enter the directory path containing database: ")
     if not os.path.exists(args.database_path):
-        print(f"[ERROR]|[FILE]: '{args.database_path}' does not exist.")
+        tqdm.write(f"[ERROR]|[FILE]: '{args.database_path}' does not exist.")
         exit(1)
     if not os.access(args.database_path, os.R_OK):
-        print(f"[ERROR]|[FILE]: '{args.database_path}' is not accessible for reading.")
+        tqdm.write(f"[ERROR]|[FILE]: '{args.database_path}' is not accessible for reading.")
         exit(1)
     if not is_valid_sqlite3_file(args.database_path):
-        print(f"[ERROR]|[FILE]:'{args.database_path}' is not a valid SQLite3 database.")
+        tqdm.write(f"[ERROR]|[FILE]:'{args.database_path}' is not a valid SQLite3 database.")
         exit(1)
 
     sqlite_conn = sqlite3.connect(f'file:{args.database_path}?mode=ro', uri=True)
     torrents_check_result, torrents_check_error = check_database_column_structure(sqlite_conn, "torrents", {"info_hash", "name", "total_size", "discovered_on"})
     files_check_result, files_check_error = check_database_column_structure(sqlite_conn, "files", {"id", "torrent_id", "size", "path"})
     if not torrents_check_result:
-        print(torrents_check_error)
+        tqdm.write(torrents_check_error)
         exit(1)
     if not files_check_result:
-        print(files_check_error)
+        tqdm.write(files_check_error)
         exit(1)
 
     db_params = {

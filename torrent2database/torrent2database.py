@@ -85,9 +85,9 @@ def get_torrent_details(torrent_path, add_files, add_files_limit, import_padding
         return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
     except Exception as e:
         if str(e) == "b'name'":
-            print(f"[ERROR]|[DETAILS]: '{torrent_path}': torrent 'name' is empty.")
+            tqdm.write(f"\n[ERROR]|[DETAILS]: '{torrent_path}': torrent 'name' is empty.")
         else:
-            print(f"[ERROR]|[DETAILS]: Unknown error '{torrent_path}': {e}")
+            tqdm.write(f"\n[ERROR]|[DETAILS]: Unknown error '{torrent_path}': {e}")
         return None
 
 def insert_torrent_files(conn, info_hash, files_info, torrent_path):
@@ -101,9 +101,9 @@ def insert_torrent_files(conn, info_hash, files_info, torrent_path):
     except Exception as e:
         conn.rollback()
         if str(e) ==  'A string literal cannot contain NUL (0x00) characters.':
-            print(f"[ERROR]|[FILE]: '{torrent_path}': filelist contains empty or invalid names.")
+            tqdm.write(f"[ERROR]|[FILE]: '{torrent_path}': filelist contains empty or invalid names.")
         else:
-            print(f"[ERROR]|[FILE]: Unknown error {torrent_path}': {e}")
+            tqdm.write(f"[ERROR]|[FILE]: Unknown error {torrent_path}': {e}")
     finally:
         cur.close()
 
@@ -118,9 +118,9 @@ def insert_torrent(conn, torrent_details, torrent_path):
     except Exception as e:
         conn.rollback()
         if str(e) == "A string literal cannot contain NUL (0x00) characters.":
-            print(f"[ERROR]|[TORRENT]: '{torrent_path}': torrent 'name' is an invalid string.")
+            tqdm.write(f"[ERROR]|[TORRENT]: '{torrent_path}': torrent 'name' is an invalid string.")
         else:
-            print(f"[ERROR]|[TORRENT]: Unknown error'{torrent_path}': {e}")
+            tqdm.write(f"[ERROR]|[TORRENT]: Unknown error'{torrent_path}': {e}")
         return False
     finally:
         cur.close()
@@ -135,8 +135,8 @@ def insert_torrent_source(conn, source, info_hash, creation_date):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Error inserting torrent source into the database: {e}")
-        print(f"Torrent source of the error: {info_hash.hex()}\n")
+        tqdm.write(f"Error inserting torrent source into the database: {e}")
+        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -155,8 +155,8 @@ def insert_torrent_content(conn, info_hash, creation_date):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Error inserting torrent content into the database: {e}")
-        print(f"Torrent source of the error: {info_hash.hex()}\n")
+        tqdm.write(f"Error inserting torrent content into the database: {e}")
+        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
     finally:
         cur.close()
 
@@ -176,7 +176,7 @@ def insert_source(conn, source_name):
     timestamp_now = datetime.now(timezone.utc)
     
     if check_source_exists(conn, source_key):
-        print(f"[INFO]|[SOURCE]: '{source_name}' already exists.")
+        tqdm.write(f"[INFO]|[SOURCE]: '{source_name}' already exists.")
         return
     
     cur = conn.cursor()
@@ -184,10 +184,10 @@ def insert_source(conn, source_name):
         cur.execute(sql.SQL("INSERT INTO torrent_sources (key, name, created_at, updated_at) VALUES (%s, %s, %s, %s)"),
                     (source_key, source_name, timestamp_now, timestamp_now))
         conn.commit()
-        print(f"[INFO]|[SOURCE]: '{source_name}' successfully added.")
+        tqdm.write(f"[INFO]|[SOURCE]: '{source_name}' successfully added.")
     except Exception as e:
         conn.rollback()
-        print(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
+        tqdm.write(f"[INFO]|[SOURCE]: Unknown error while inserting '{source_name}': {e}")
         cur.close()
         exit(1)
     finally:
@@ -204,14 +204,14 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
                     continue
                 if not force_import_negative and (torrent_details[:-1][2] < 0): # If the torrent size is negative
                     if negative_to_zero:
-                        print(f"[INFO]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', setting it to '0'.")
+                        tqdm.write(f"[INFO]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', setting it to '0'.")
                         torrent_details = torrent_details[:2] + (0,) + torrent_details[3:]
                     else:
-                        print(f"[ERROR]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', not importing.")
+                        tqdm.write(f"[ERROR]|[SIZE]: '{torrent_path}' 'size' value is '{torrent_details[:-1][2]}', not importing.")
                         continue
                 else:
                     if force_import_negative and (torrent_details[:-1][2] < 0):
-                        print(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
+                        tqdm.write(f"[INFO]|[SIZE]: {torrent_path}' 'size' value is '{torrent_details[:-1][2]}', force importing.")
                 if torrent_details:
                     insert_torrent_succeeded = insert_torrent(conn, torrent_details[:-1], torrent_path)  # Exclude files_info from torrent_details
                     if not insert_torrent_succeeded:
@@ -227,19 +227,19 @@ def process_torrent_files(directory_path, recursive, conn, source_name, add_file
 def main():
     args = parse_arguments()
     if len(args.source_name) == 0:
-        print(f"[ERROR]|[ARGS]: --source is set to an empty string.")
+        tqdm.write(f"[ERROR]|[ARGS]: --source is set to an empty string.")
         exit(1)
     if args.negative_to_zero and args.force_import_negative:
-        print(f"[ERROR]|[ARGS]: --negative-to-zero and --force-import-negative may not be used together.")
+        tqdm.write(f"[ERROR]|[ARGS]: --negative-to-zero and --force-import-negative may not be used together.")
         exit(1)
     if not args.add_files:
-        print(f"[INFO]|[ARGS]: --add-files is not set. Setting this is recommeneded. If you don't set this, 'mutli file' torrents will be imported as '0 files'.")
-        print(f"[INFO]|[ARGS]: The total size of a torrent will be calculated and imported either way.")
+        tqdm.write(f"[INFO]|[ARGS]: --add-files is not set. Setting this is recommeneded. If you don't set this, 'mutli file' torrents will be imported as '0 files'.")
+        tqdm.write(f"[INFO]|[ARGS]: The total size of a torrent will be calculated and imported either way.")
         mutli_as_zero = input(f"[INFO]|[ARGS]: Import 'mutli file' torrents as '0 files'? [y/n]: ").lower()
         if mutli_as_zero == 'y':
-            print(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
+            tqdm.write(f"[INFO]|[ARGS]: Importing multi file torrents as '0 files'.")
         else:
-            print("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
+            tqdm.write("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
             exit(1)
     if not args.directory_path:
         args.directory_path = input("Enter the directory path containing .torrent files: ")
