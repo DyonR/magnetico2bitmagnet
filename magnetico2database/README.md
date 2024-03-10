@@ -1,4 +1,4 @@
-# torrent2database
+# magnetico2database
 
 `magnetico2database` processes a magnetico SQLite database and inserts the data directly into the bitmagnet PostgreSQL database.
 ## Warning
@@ -41,7 +41,6 @@ python3 magnetico2database.py -h
 - `--add-files-limit ADD_FILES_LIMIT`: Limit the number of files to add to the database.
 - `--insert-content`:  Directly make **infohashes** searchable in the WebUI by inserting data in the PostgreSQL `torrent_content` table. Searching by name is only possible after `bitmagnet reprocess` has completed.
 - `--import-padding`: Handle padding files as normal files (not recommended) (ex: `_____padding_file_0_if you see this file, please update to BitComet 0.85 or above____`).
-- `-r, --recursive`: Recursively find .torrent files in subdirectories of the `<directory_path>`.
 
 
 ### Example
