@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.02a'
+__version__ = '2024.03.10a'
 
 import sqlite3
 import json
@@ -117,7 +117,7 @@ def main(database_path, output_file, split_size):
             if f:
                 f.close()
             new_output_file = generate_output_file_path(output_file, file_counter, split_size)
-            f = open(new_output_file, 'w')
+            f = open(new_output_file, 'w', encoding='utf-8', newline='\n')
             file_counter += 1
 
         try:
