@@ -23,7 +23,7 @@ def parse_arguments():
     parser.add_argument("--add-files-limit", type=int, default=100, help="Limit the number of files to add to the database.")
     parser.add_argument("--insert-content", action="store_true", help="Directly make hashes searchable in the WebUI without the need to run `bitmagnet reprocess`")
     parser.add_argument('--import-padding', action='store_true', help='Handle padding files as normal files (not recommended).')
-    parser.add_argument("-r", "--recursive", action="store_true", help='Recursively find .torrent files in subdirectories of the <directory_path>.')
+    parser.add_argument('--force-import', action='store_true', help='Force importing torrents with no name and filenames (not recommended).')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
 
@@ -101,7 +101,7 @@ def insert_torrent(pg_conn, torrent_details):
     finally:
         cur.close()
 
-def get_torrent_details(magnetico_torrent_data, add_files, files, import_padding, add_files_limit=10000):
+def get_torrent_details(magnetico_torrent_data, add_files, files, import_padding):
     try:
         info_hash_lower = (magnetico_torrent_data[1].decode('utf-8')).lower()
         info_hash = bytes.fromhex(info_hash_lower)
@@ -133,7 +133,7 @@ def get_torrent_details(magnetico_torrent_data, add_files, files, import_padding
         print(e)
     return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
 
-def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name, add_files, add_files_limit, insert_content, import_padding, batch_size=1000):
+def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name, add_files, add_files_limit, insert_content, import_padding, force_import, batch_size=1000):
     sqlite_conn.text_factory = bytes
     print("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
@@ -151,10 +151,18 @@ def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name,
                 try:
                     files = []
                     files_count = 1
+                    
                     if add_files:
                         files_cursor = sqlite_conn.cursor()
                         files_cursor.execute(f"SELECT size, path FROM files WHERE torrent_id = {torrent[0]}")
                         files = files_cursor.fetchall()
+                        all_empty = all(second == b'' for _, second in files)
+                        if all_empty:
+                            if force_import:
+                                print(f"\nTorrent with id {torrent[0]} only contains empty filenames, force importing.")
+                            if not force_import:
+                                print(f"\nTorrent with id {torrent[0]} only contains empty filenames, skipping.")
+                                continue
                         files_count = len(files)
                         files_cursor.close()
                     torrent_details = get_torrent_details(torrent, add_files, files, import_padding, add_files_limit)
@@ -281,7 +289,7 @@ def main():
     }
     pg_conn = psycopg2.connect(**db_params)
     insert_source(pg_conn, args.source_name)
-    process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_content, args.import_padding)
+    process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_content, args.import_padding, args.force_import)
 
 if __name__ == '__main__':
     main()
