@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.09d'
+__version__ = '2024.03.10b'
 
 import argparse
 import os
@@ -66,16 +66,17 @@ def get_torrent_details(torrent_path, add_files, add_files_limit, import_padding
         if file_status == "multi":
             files_count = len(info_dict[b'files'])
             files_info = []
-            actual_files_count = 0
+            file_index = 0
             total_size = sum(file[b'length'] for file in info_dict[b'files'])
             for file in info_dict[b'files']:
                 file_path = os.path.join(*[decode_with_fallback(part) for part in file[b'path']])
                 file_size = file[b'length']
 
-                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and actual_files_count < add_files_limit:
-                    files_info.append((actual_files_count, file_path, file_size))
-                    actual_files_count += 1 
-                if actual_files_count >= add_files_limit:
+                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and file_index < add_files_limit:
+                    files_info.append((file_index, file_path, file_size))
+                file_index += 1
+                if file_index >= add_files_limit:
+                    file_status = 'over_threshold'
                     break
         else:
             total_size = info_dict[b'length']

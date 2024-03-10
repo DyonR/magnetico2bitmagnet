@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '2024.03.10a'
+__version__ = '2024.03.10c'
 
 import argparse
 import os
@@ -101,7 +101,7 @@ def insert_torrent(pg_conn, torrent_details):
     finally:
         cur.close()
 
-def get_torrent_details(magnetico_torrent_data, add_files, files, import_padding):
+def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, files, import_padding):
     try:
         info_hash_lower = (magnetico_torrent_data[1].decode('utf-8')).lower()
         info_hash = bytes.fromhex(info_hash_lower)
@@ -116,15 +116,18 @@ def get_torrent_details(magnetico_torrent_data, add_files, files, import_padding
 
         files_info = []
         if file_status == "multi":
-            actual_files_count = 0
+            file_index = 0
             for file in files:
                 file_path = decode_with_fallback(file[1])
                 file_size = file[0]
 
-                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and actual_files_count < add_files_limit:
-                    files_info.append((actual_files_count, file_path, file_size))
-                    actual_files_count += 1 
-                if actual_files_count >= add_files_limit:
+                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and file_index < add_files_limit:
+                    files_info.append((file_index, file_path, file_size))
+                    if magnetico_torrent_data[0] == 72:
+                        print(f"{file_index}: {file_path}" )
+                file_index += 1
+                if file_index > add_files_limit:
+                    file_status = 'over_threshold'
                     break
         else:
             if add_files:
@@ -165,7 +168,7 @@ def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name,
                                 continue
                         files_count = len(files)
                         files_cursor.close()
-                    torrent_details = get_torrent_details(torrent, add_files, files, import_padding, add_files_limit)
+                    torrent_details = get_torrent_details(torrent, add_files, add_files_limit, files, import_padding)
                     if torrent_details:
                         insert_torrent_succeeded = insert_torrent(pg_conn, torrent_details[:-1])
                         if not insert_torrent_succeeded:
