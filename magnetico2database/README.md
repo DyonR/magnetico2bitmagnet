@@ -1,4 +1,4 @@
-# torrent2database
+# magnetico2database
 
 `magnetico2database` processes a magnetico SQLite database and inserts the data directly into the bitmagnet PostgreSQL database.
 ## Warning
