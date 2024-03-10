@@ -135,7 +135,7 @@ def process_torrent_directory(directory_path, source, output_file, split_size, a
             if f:
                 f.close()
             new_output_file = generate_output_file_path(output_file, file_counter, split_size)
-            f = open(new_output_file, 'w')
+            f = open(new_output_file, 'w', encoding='utf-8', newline='\n')
             file_counter += 1
 
         data = {
