@@ -62,7 +62,7 @@ def get_torrent_details(torrent_path, add_files, add_files_limit, import_padding
         files_count = None
         total_size = 0
         files_info = []
-
+        name = decode_with_fallback(info_dict[b'name'])
         if file_status == "multi":
             files_count = len(info_dict[b'files'])
             files_info = []
@@ -80,10 +80,7 @@ def get_torrent_details(torrent_path, add_files, add_files_limit, import_padding
         else:
             total_size = info_dict[b'length']
             if add_files:
-                name = decode_with_fallback(info_dict[b'name'])
                 files_info.append((0, name, total_size))
-        
-        name = decode_with_fallback(info_dict[b'name'])
         return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
     except Exception as e:
         if str(e) == "b'name'":
