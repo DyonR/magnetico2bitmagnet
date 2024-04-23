@@ -21,8 +21,8 @@ def parse_arguments():
     parser.add_argument("--source-name", required=True, help='"Torrent Source" how it will appear in bitmagnet.')
     parser.add_argument("--add-files", action="store_true", help="Add file data to the database?")
     parser.add_argument("--add-files-limit", type=int, default=100, help="Limit the number of files to add to the database.")
-    parser.add_argument("--insert-content", action="store_true", help="Directly make hashes searchable in the WebUI without the need to run `bitmagnet reprocess`")
     parser.add_argument('--import-padding', action='store_true', help='Handle padding files as normal files (not recommended).')
+    parser.add_argument('--insert-torrent-content', "--insert-content", action='store_true', help='Insert data into the "torrent_content" column to make hashes directly searchable (not recommended).')
     parser.add_argument('--force-import', action='store_true', help='Force importing torrents with no name and filenames (not recommended).')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}', help="Show the script's version and exit")
     return parser.parse_args()
@@ -41,11 +41,10 @@ def insert_torrent_content(pg_conn, info_hash, creation_date):
     info_hash_hex = info_hash.hex()
     tsvector_placeholder = f"'{info_hash_hex}'"
     
-    sql_command = ("INSERT INTO torrent_contents (info_hash, content_type, content_source, content_id, languages, episodes, video_resolution, video_source, video_codec, video_3d, video_modifier, release_group, created_at, updated_at, tsv) "
-                   "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_tsvector({tsvector_placeholder})) ON CONFLICT DO NOTHING")
+    sql_command = ("INSERT INTO torrent_contents (info_hash, languages, created_at, updated_at, tsv) "
+                   "VALUES (%s, %s, %s, %s, to_tsvector({tsvector_placeholder})) ON CONFLICT DO NOTHING")
     
-    languages_json = '[]'
-    values = (info_hash, None, None, None, languages_json, None, None, None, None, None, None, None, creation_date, creation_date)
+    values = (info_hash, '[]', creation_date, creation_date)
     cur = pg_conn.cursor()
     try:
         cur.execute(sql.SQL(sql_command.format(tsvector_placeholder=tsvector_placeholder)), values)
@@ -58,9 +57,9 @@ def insert_torrent_content(pg_conn, info_hash, creation_date):
         cur.close()
 
 def insert_torrent_source(pg_conn, source, info_hash, creation_date):
-    sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, import_id, bfsd, bfpe, seeders, leechers, published_at, created_at, updated_at) "
-                   "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (source, info_hash) DO NOTHING")
-    values = (source, info_hash, None, None, None, None, None, creation_date, creation_date, creation_date)
+    sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
+                   "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, info_hash) DO NOTHING")
+    values = (source, info_hash, creation_date, creation_date, creation_date)
     cur = pg_conn.cursor()
     try:
         cur.execute(sql.SQL(sql_command), values)
@@ -289,7 +288,7 @@ def main():
     }
     pg_conn = psycopg2.connect(**db_params)
     insert_source(pg_conn, args.source_name)
-    process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_content, args.import_padding, args.force_import)
+    process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_torrent_content, args.import_padding, args.force_import)
 
 if __name__ == '__main__':
     main()
