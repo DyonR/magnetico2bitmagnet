@@ -230,7 +230,7 @@ def main():
         else:
             tqdm.write("[INFO]|[ARGS]: Please set --add-files to acknowledge your choice.")
             exit(1)
-    if not args.insert_content:
+    if not args.insert_torrent_content:
         tqdm.write(f"[INFO]|[ARGS]: --insert-content is not set. Torrents will not show up in the WebUI until `bitmagnet reprocess` has ran.")
         tqdm.write(f"[INFO]|[ARGS]: Enabling --insert-content makes infohashes directly searchable. Either way does `bitmagnet reprocess` need to run to have them searchable.")
         no_insert_content = input(f"[INFO]|[ARGS]: Do you want to continue without inserting content? [y/n]: ").lower()
