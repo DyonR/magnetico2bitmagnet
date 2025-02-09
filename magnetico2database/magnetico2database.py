@@ -37,7 +37,7 @@ def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp
     # If all decodings fail, fall back to a lossy decoding using 'utf-8' with replacement characters for undecodable bytes
     return byte_sequence.decode('utf-8', errors='replace')
 
-def insert_torrent_content(pg_conn, info_hash, creation_date):
+def insert_torrent_content(pg_cursor, info_hash, creation_date):
     info_hash_hex = info_hash.hex()
     tsvector_placeholder = f"'{info_hash_hex}'"
     
@@ -45,60 +45,43 @@ def insert_torrent_content(pg_conn, info_hash, creation_date):
                    "VALUES (%s, %s, %s, %s, to_tsvector({tsvector_placeholder})) ON CONFLICT DO NOTHING")
     
     values = (info_hash, '[]', creation_date, creation_date)
-    cur = pg_conn.cursor()
     try:
-        cur.execute(sql.SQL(sql_command.format(tsvector_placeholder=tsvector_placeholder)), values)
-        pg_conn.commit()
+        pg_cursor.execute(sql.SQL(sql_command.format(tsvector_placeholder=tsvector_placeholder)), values)
     except Exception as e:
-        pg_conn.rollback()
         tqdm.write(f"Error inserting torrent content into the database: {e}")
         tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
-    finally:
-        cur.close()
+        raise
 
-def insert_torrent_source(pg_conn, source, info_hash, creation_date):
+def insert_torrent_source(pg_cursor, source, info_hash, creation_date):
     sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, info_hash) DO NOTHING")
     values = (source, info_hash, creation_date, creation_date, creation_date)
-    cur = pg_conn.cursor()
     try:
-        cur.execute(sql.SQL(sql_command), values)
-        pg_conn.commit()
+        pg_cursor.execute(sql.SQL(sql_command), values)
     except Exception as e:
-        pg_conn.rollback()
         tqdm.write(f"Error inserting torrent source into the database: {e}")
         tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
-    finally:
-        cur.close()
+        raise
 
-def insert_torrent_files(pg_conn, info_hash, files_info):
+def insert_torrent_files(pg_cursor, info_hash, files_info):
     sql_command = ("INSERT INTO torrent_files (info_hash, index, path, size, created_at, updated_at) "
                    "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash, path) DO NOTHING")
-    cur = pg_conn.cursor()
     try:
         for file_info in files_info:
-            cur.execute(sql.SQL(sql_command), (info_hash,) + file_info + (datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        pg_conn.commit()
+            pg_cursor.execute(sql.SQL(sql_command), (info_hash,) + file_info + (datetime.now(timezone.utc), datetime.now(timezone.utc)))
     except Exception as e:
-        pg_conn.rollback()
         tqdm.write(f"[ERROR]|[FILE]: Unknown error: {e}")
-    finally:
-        cur.close()
+        raise
 
-def insert_torrent(pg_conn, torrent_details):
+def insert_torrent(pg_cursor, torrent_details):
     sql_command = ("INSERT INTO torrents (info_hash, name, size, private, created_at, updated_at, files_status, files_count) "
                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash) DO NOTHING")
-    cur = pg_conn.cursor()
     try:
-        cur.execute(sql.SQL(sql_command), torrent_details)
-        pg_conn.commit()
+        pg_cursor.execute(sql.SQL(sql_command), torrent_details)
         return True
     except Exception as e:
-        pg_conn.rollback()
         tqdm.write(e)
         return False
-    finally:
-        cur.close()
 
 def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, files, import_padding):
     try:
@@ -132,7 +115,7 @@ def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, file
         tqdm.write(f"{e}")
     return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
 
-def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name, add_files, add_files_limit, insert_content, import_padding, force_import, batch_size=1000):
+def process_magnetico_database(database_path, sqlite_conn, pg_cursor, source_name, add_files, add_files_limit, insert_content, import_padding, force_import, batch_size=1000):
     sqlite_conn.text_factory = bytes
     tqdm.write("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
@@ -166,14 +149,14 @@ def process_magnetico_database(database_path, sqlite_conn, pg_conn, source_name,
                         files_cursor.close()
                     torrent_details = get_torrent_details(torrent, add_files, add_files_limit, files, import_padding)
                     if torrent_details:
-                        insert_torrent_succeeded = insert_torrent(pg_conn, torrent_details[:-1])
+                        insert_torrent_succeeded = insert_torrent(pg_cursor, torrent_details[:-1])
                         if not insert_torrent_succeeded:
                             continue
                         if add_files and torrent_details[-1] and torrent_details[6] != "single":
-                            insert_torrent_files(pg_conn, torrent_details[0], torrent_details[-1])
-                        insert_torrent_source(pg_conn, source_name, torrent_details[0], torrent_details[4])
+                            insert_torrent_files(pg_cursor, torrent_details[0], torrent_details[-1])
+                        insert_torrent_source(pg_cursor, source_name, torrent_details[0], torrent_details[4])
                         if insert_content:
-                            insert_torrent_content(pg_conn, torrent_details[0], torrent_details[4])
+                            insert_torrent_content(pg_cursor, torrent_details[0], torrent_details[4])
                 finally:
                     pbar.update(1)
             offset += batch_size
@@ -288,7 +271,16 @@ def main():
     }
     pg_conn = psycopg2.connect(**db_params)
     insert_source(pg_conn, args.source_name)
-    process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_torrent_content, args.import_padding, args.force_import)
+    pg_cursor = pg_conn.cursor()
+    try:
+        pg_cursor.execute('BEGIN')
+        process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_torrent_content, args.import_padding, args.force_import)
+        tqdm.write("[INFO]|[PG]: commiting…")
+        pg_conn.commit()
+        pg_cursor.close()
+    except BaseException:
+        tqdm.write("[ERROR]: Error when executing SQL, rolling back")
+        pg_conn.rollback()
 
 if __name__ == '__main__':
     main()
