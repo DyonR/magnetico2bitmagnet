@@ -54,7 +54,7 @@ def insert_torrent_content(pg_cursor, info_hash, creation_date):
 
 def insert_torrent_source(pg_cursor, source, info_hash, creation_date):
     sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
-                   "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, info_hash) DO NOTHING")
+                   "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
     values = (source, info_hash, creation_date, creation_date, creation_date)
     try:
         pg_cursor.execute(sql.SQL(sql_command), values)
@@ -65,7 +65,7 @@ def insert_torrent_source(pg_cursor, source, info_hash, creation_date):
 
 def insert_torrent_files(pg_cursor, info_hash, files_info):
     sql_command = ("INSERT INTO torrent_files (info_hash, index, path, size, created_at, updated_at) "
-                   "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash, path) DO NOTHING")
+                   "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
     try:
         for file_info in files_info:
             pg_cursor.execute(sql.SQL(sql_command), (info_hash,) + file_info + (datetime.now(timezone.utc), datetime.now(timezone.utc)))
@@ -75,7 +75,7 @@ def insert_torrent_files(pg_cursor, info_hash, files_info):
 
 def insert_torrent(pg_cursor, torrent_details):
     sql_command = ("INSERT INTO torrents (info_hash, name, size, private, created_at, updated_at, files_status, files_count) "
-                   "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (info_hash) DO NOTHING")
+                   "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
     try:
         pg_cursor.execute(sql.SQL(sql_command), torrent_details)
         return True
