@@ -29,6 +29,7 @@ def parse_arguments():
 
 def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp', 'gbk', 'gb18030', 'cp1251', 'latin1')):
     """Attempt to decode a byte sequence using a list of encodings, falling back to a lossy decoding if necessary."""
+    byte_sequence = byte_sequence.replace(b'\x00', b'')
     for encoding in encodings:
         try:
             return byte_sequence.decode(encoding)
