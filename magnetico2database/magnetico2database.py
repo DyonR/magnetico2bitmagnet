@@ -274,7 +274,7 @@ def main():
     pg_cursor = pg_conn.cursor()
     try:
         pg_cursor.execute('BEGIN')
-        process_magnetico_database(args.database_path, sqlite_conn, pg_conn, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_torrent_content, args.import_padding, args.force_import)
+        process_magnetico_database(args.database_path, sqlite_conn, pg_cursor, args.source_name.lower(), args.add_files, args.add_files_limit, args.insert_torrent_content, args.import_padding, args.force_import)
         tqdm.write("[INFO]|[PG]: commiting…")
         pg_conn.commit()
         pg_cursor.close()
