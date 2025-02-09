@@ -278,9 +278,12 @@ def main():
         tqdm.write("[INFO]|[PG]: commiting…")
         pg_conn.commit()
         pg_cursor.close()
-    except BaseException:
-        tqdm.write("[ERROR]: Error when executing SQL, rolling back")
+    except BaseException as e:
+        tqdm.write(f"[ERROR]: Error when executing SQL: {str(e)}. Rolling back")
         pg_conn.rollback()
+        import traceback
+
+        traceback.print_exc()
 
 if __name__ == '__main__':
     main()
