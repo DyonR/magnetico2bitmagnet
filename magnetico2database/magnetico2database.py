@@ -37,129 +37,193 @@ def decode_with_fallback(byte_sequence, encodings=('utf-8', 'shift_jis', 'euc_jp
     # If all decodings fail, fall back to a lossy decoding using 'utf-8' with replacement characters for undecodable bytes
     return byte_sequence.decode('utf-8', errors='replace')
 
-def insert_torrent_content(pg_cursor, info_hash, creation_date):
-    info_hash_hex = info_hash.hex()
-    tsvector_placeholder = f"'{info_hash_hex}'"
-    
+
+def insert_torrent_content(pg_cursor, torrents):    
     sql_command = ("INSERT INTO torrent_contents (info_hash, languages, created_at, updated_at, tsv) "
-                   "VALUES (%s, %s, %s, %s, to_tsvector({tsvector_placeholder})) ON CONFLICT DO NOTHING")
-    
-    values = (info_hash, '[]', creation_date, creation_date)
+                   "VALUES %s ON CONFLICT DO NOTHING")
     try:
-        pg_cursor.execute(sql.SQL(sql_command.format(tsvector_placeholder=tsvector_placeholder)), values)
+        psycopg2.extras.execute_values(
+            pg_cursor,
+            sql_command,
+            [(torrent[1], '[]', torrent[5], torrent[5], torrent[1].hex()) for torrent in torrents],
+            "(%s, %s, to_timestamp(%s), to_timestamp(%s), to_tsvector(%s))",
+        )
     except Exception as e:
         tqdm.write(f"Error inserting torrent content into the database: {e}")
-        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
         raise
 
-def insert_torrent_source(pg_cursor, source, info_hash, creation_date):
-    sql_command = ("INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
-                   "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
-    values = (source, info_hash, creation_date, creation_date, creation_date)
+def insert_torrent_source(pg_cursor, source, torrents):
+    sql_command = (
+        "INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
+        "VALUES %s ON CONFLICT DO NOTHING"
+    )
     try:
-        pg_cursor.execute(sql.SQL(sql_command), values)
+        psycopg2.extras.execute_values(
+            pg_cursor,
+            sql_command,
+            [(source, torrent[1], torrent[5], torrent[5], torrent[5]) for torrent in torrents],
+            "(%s, %s, to_timestamp(%s), to_timestamp(%s), to_timestamp(%s))",
+        )
     except Exception as e:
         tqdm.write(f"Error inserting torrent source into the database: {e}")
-        tqdm.write(f"Torrent source of the error: {info_hash.hex()}\n")
         raise
 
+
 def insert_torrent_files(pg_cursor, info_hash, files_info):
-    sql_command = ("INSERT INTO torrent_files (info_hash, index, path, size, created_at, updated_at) "
-                   "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
+    sql_command = (
+        "INSERT INTO torrent_files (info_hash, index, path, size, created_at, updated_at) "
+        "VALUES %s ON CONFLICT DO NOTHING"
+    )
     try:
-        for file_info in files_info:
-            pg_cursor.execute(sql.SQL(sql_command), (info_hash,) + file_info + (datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        now = datetime.now(timezone.utc)
+        psycopg2.extras.execute_values(
+            pg_cursor,
+            sql_command,
+            [(info_hash, *file_info, now, now) for file_info in files_info],
+        )
     except Exception as e:
         tqdm.write(f"[ERROR]|[FILE]: Unknown error: {e}")
         raise
 
-def insert_torrent(pg_cursor, torrent_details):
-    sql_command = ("INSERT INTO torrents (info_hash, name, size, private, created_at, updated_at, files_status, files_count) "
-                   "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING")
+
+def insert_torrent(pg_cursor, torrents):
+    sql_command = (
+        "INSERT INTO torrents (info_hash, name, size, private,  created_at, updated_at, files_status, files_count) "
+        "VALUES %s ON CONFLICT DO NOTHING RETURNING info_hash"
+    )
     try:
-        pg_cursor.execute(sql.SQL(sql_command), torrent_details)
-        return True
+        result = psycopg2.extras.execute_values(
+            pg_cursor,
+            sql_command,
+            [torrent[1:] for torrent in torrents],
+            "(%s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s), %s, %s)",
+            fetch=True,
+        )
+
+        return [bytes(row[0]) for row in result]
     except Exception as e:
         tqdm.write(e)
         return False
 
-def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit, files, import_padding):
+
+def get_torrent_details(magnetico_torrent_data, add_files_limit):
     try:
-        info_hash_lower = (magnetico_torrent_data[1].decode('utf-8')).lower()
-        info_hash = bytes.fromhex(info_hash_lower)
-        name = name = decode_with_fallback(magnetico_torrent_data[2])
+        torrent_id = magnetico_torrent_data[0]
+        info_hash = magnetico_torrent_data[1]
+        name = decode_with_fallback(magnetico_torrent_data[2])
         total_size = magnetico_torrent_data[3]
-        creation_date = magnetico_torrent_data[4].decode('utf-8')
-        file_status = 'multi'
-        files_count = len(files)
+        creation_date = magnetico_torrent_data[4]
+        files_count = magnetico_torrent_data[5]
+        file_status = (
+            "single"
+            if files_count == 1
+            else "over_threshold" if files_count > add_files_limit else "multi"
+        )
         if files_count == 1:
             files_count = None
-            file_status = 'single'
-        files_info = []
-        if file_status == "multi":
-            file_index = 0
-            for file in files:
-                file_path = decode_with_fallback(file[1])
-                file_size = file[0]
-
-                if import_padding or ("_____padding" not in file_path and ".____padding" not in file_path) and file_index < add_files_limit:
-                    files_info.append((file_index, file_path, file_size))
-                file_index += 1
-                if file_index > add_files_limit:
-                    file_status = 'over_threshold'
-                    break
-        else:
-            if add_files:
-                files_info.append((0, name, total_size))
     except Exception as e:
         tqdm.write(f"{e}")
-    return (info_hash, name, total_size, False, creation_date, creation_date, file_status, files_count, files_info)
+    return (
+        torrent_id,
+        info_hash,
+        name,
+        total_size,
+        False,
+        creation_date,
+        creation_date,
+        file_status,
+        files_count,
+    )
 
-def process_magnetico_database(database_path, sqlite_conn, pg_cursor, source_name, add_files, add_files_limit, insert_content, import_padding, force_import, batch_size=1000):
+
+def get_file_details(torrent_detail, add_files_limit, files, import_padding):
+    (_, _, name, total_size, _, _, _, file_status, _) = torrent_detail
+    try:
+        files_info = []
+        file_index = 0
+        for file in files:
+            file_path = decode_with_fallback(file[1])
+            file_size = file[0]
+
+            if (
+                import_padding
+                or ("_____padding" not in file_path and ".____padding" not in file_path)
+                and file_index < add_files_limit
+            ):
+                files_info.append((file_index, file_path, file_size))
+            file_index += 1
+            if file_index > add_files_limit:
+                break
+    except Exception as e:
+        tqdm.write(f"{e}")
+    return files_info
+
+
+def process_magnetico_database(
+    database_path,
+    sqlite_conn,
+    pg_cursor,
+    source_name,
+    add_files,
+    add_files_limit,
+    insert_content,
+    import_padding,
+    force_import,
+    batch_size=1000,
+):
     sqlite_conn.text_factory = bytes
     tqdm.write("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
     tqdm.write(f"[INFO]|[SQLite]: Found {total_count} records in the database.")
+    torrents_query = """
+            SELECT torrents.id, info_hash, name, total_size, discovered_on, count(files.torrent_id)
+            FROM torrents
+            LEFT JOIN files on torrents.id = files.torrent_id
+            GROUP BY torrents.id
+            """
+    sqlite_cursor = sqlite_conn.cursor()
+    sqlite_cursor.arraysize = batch_size
+    torrents = sqlite_cursor.execute(torrents_query)
+    files_cursor = sqlite_conn.cursor()
 
     with tqdm(total=total_count, desc="Processing magnetico records") as pbar:
         offset = 0
         while offset < total_count:
-            torrents_query = f"""
-            SELECT id, hex(info_hash), name, total_size, strftime('%Y-%m-%dT%H:%M:%S.000Z', discovered_on, 'unixepoch')
-            FROM torrents
-            LIMIT {batch_size} OFFSET {offset}
-            """
-            for torrent in sqlite_conn.execute(torrents_query):
-                try:
-                    files = []
-                    files_count = 1
-                    
+            batch = torrents.fetchmany()
+            try:
+                torrent_details = [
+                    get_torrent_details(torrent, add_files_limit)
+                    for torrent in batch
+                ]
+                inserted_hashes = insert_torrent(pg_cursor, torrent_details)
+                inserted = [
+                    next(
+                        detail
+                        for detail in torrent_details
+                        if detail[1] == inserted_hash
+                    )
+                    for inserted_hash in inserted_hashes
+                ]
+                for inserted_torrent in inserted:
                     if add_files:
-                        files_cursor = sqlite_conn.cursor()
-                        files_cursor.execute(f"SELECT size, path FROM files WHERE torrent_id = {torrent[0]}")
-                        files = files_cursor.fetchall()
-                        all_empty = all(second == b'' for _, second in files)
-                        if all_empty:
-                            if force_import:
-                                tqdm.write(f"[INFO]|[DATA]: Record with id {torrent[0]} only contains empty filenames, force importing.")
-                            if not force_import:
-                                tqdm.write(f"[INFO]|[DATA]: Record with id {torrent[0]} only contains empty filenames, skipping.")
-                                continue
-                        files_count = len(files)
-                        files_cursor.close()
-                    torrent_details = get_torrent_details(torrent, add_files, add_files_limit, files, import_padding)
-                    if torrent_details:
-                        insert_torrent_succeeded = insert_torrent(pg_cursor, torrent_details[:-1])
-                        if not insert_torrent_succeeded:
-                            continue
-                        if add_files and torrent_details[-1] and torrent_details[6] != "single":
-                            insert_torrent_files(pg_cursor, torrent_details[0], torrent_details[-1])
-                        insert_torrent_source(pg_cursor, source_name, torrent_details[0], torrent_details[4])
-                        if insert_content:
-                            insert_torrent_content(pg_cursor, torrent_details[0], torrent_details[4])
-                finally:
-                    pbar.update(1)
+                        files = files_cursor.execute(
+                            "SELECT size, path FROM files WHERE torrent_id = ?",
+                            (inserted_torrent[0],),
+                        )
+                        file_details = get_file_details(
+                            inserted_torrent, add_files_limit, files, import_padding
+                        )
+                        insert_torrent_files(
+                            pg_cursor, inserted_torrent[1], file_details
+                        )
+
+                insert_torrent_source(pg_cursor, source_name, inserted)
+                if insert_content:
+                    insert_torrent_content(pg_cursor, inserted)
+            finally:
+                pbar.update(batch_size)
             offset += batch_size
+
 
 def check_source_exists(pg_conn, source_key):
     """Check if a source key already exists in the database."""
