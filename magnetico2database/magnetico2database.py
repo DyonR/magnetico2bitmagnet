@@ -221,6 +221,13 @@ def process_magnetico_database(
                         file_details = get_file_details(
                             inserted_torrent, add_files_limit, files, import_padding
                         )
+                        all_empty = all(path == b'' for _, path in file_details)
+                        if all_empty:
+                            if force_import:
+                                tqdm.write(f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, force importing.")
+                            if not force_import:
+                                tqdm.write(f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, skipping.")
+                                continue
                         insert_torrent_files(
                             pg_cursor, inserted_torrent[1], file_details
                         )
