@@ -6,6 +6,7 @@ import argparse
 import os
 import sqlite3
 import psycopg2
+import psycopg2.extras
 from datetime import datetime, timezone
 from psycopg2 import sql
 from tqdm import tqdm
@@ -106,14 +107,14 @@ def insert_torrent(pg_cursor, torrents):
         return False
 
 
-def get_torrent_details(magnetico_torrent_data, add_files_limit):
+def get_torrent_details(magnetico_torrent_data, add_files, add_files_limit):
     try:
         torrent_id = magnetico_torrent_data[0]
         info_hash = magnetico_torrent_data[1]
         name = decode_with_fallback(magnetico_torrent_data[2])
         total_size = magnetico_torrent_data[3]
         creation_date = magnetico_torrent_data[4]
-        files_count = magnetico_torrent_data[5]
+        files_count = magnetico_torrent_data[5] if add_files else 1
         file_status = (
             "single"
             if files_count == 1
@@ -175,12 +176,19 @@ def process_magnetico_database(
     tqdm.write("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
     tqdm.write(f"[INFO]|[SQLite]: Found {total_count} records in the database.")
-    torrents_query = """
-            SELECT torrents.id, info_hash, name, total_size, discovered_on, count(files.torrent_id)
-            FROM torrents
-            LEFT JOIN files on torrents.id = files.torrent_id
-            GROUP BY torrents.id
-            """
+    if add_files:
+        torrents_query = """
+                SELECT torrents.id, info_hash, name, total_size, discovered_on, count(files.torrent_id)
+                FROM torrents
+                LEFT JOIN files on torrents.id = files.torrent_id
+                GROUP BY torrents.id
+                """
+    else:
+        torrents_query = """
+                SELECT torrents.id, info_hash, name, total_size, discovered_on
+                FROM torrents
+                """
+
     sqlite_cursor = sqlite_conn.cursor()
     sqlite_cursor.arraysize = batch_size
     torrents = sqlite_cursor.execute(torrents_query)
@@ -192,7 +200,7 @@ def process_magnetico_database(
             batch = torrents.fetchmany()
             try:
                 torrent_details = [
-                    get_torrent_details(torrent, add_files_limit)
+                    get_torrent_details(torrent, add_files, add_files_limit)
                     for torrent in batch
                 ]
                 inserted_hashes = insert_torrent(pg_cursor, torrent_details)
