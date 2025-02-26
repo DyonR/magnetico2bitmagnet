@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from psycopg2 import sql
 from tqdm import tqdm
 
+try:
+    import pgcopy
+except ImportError:
+    pgcopy = None
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='magnetico2database processes a magnetico SQLite database to extract and print data in a bitmagnet supported JSON format.', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("database_path", nargs='?', help="The path to the directory containing .torrent files.\nIf not provided, the script will prompt for it.")
@@ -53,7 +58,17 @@ def insert_torrent_content(pg_cursor, torrents):
         tqdm.write(f"Error inserting torrent content into the database: {e}")
         raise
 
-def insert_torrent_source(pg_cursor, source, torrents):
+
+def insert_torrent_source(pg_cursor, source, torrents, copy_manager=None):
+    if copy_manager is not None:
+        copy_manager.threading_copy(
+            [
+                (source, torrent[1], *[datetime.fromtimestamp(torrent[5])] * 3)
+                for torrent in torrents
+            ]
+        )
+        return
+
     sql_command = (
         "INSERT INTO torrents_torrent_sources (source, info_hash, published_at, created_at, updated_at) "
         "VALUES %s ON CONFLICT DO NOTHING"
@@ -85,6 +100,50 @@ def insert_torrent_files(pg_cursor, info_hash, files_info):
     except Exception as e:
         tqdm.write(f"[ERROR]|[FILE]: Unknown error: {e}")
         raise
+
+
+def get_file_details_copy(sqlite_cursor, torrents, add_files_limit, import_padding):
+    now = datetime.now(timezone.utc)
+    files = sqlite_cursor.fetchmany()
+    seen_files = {}
+    while files:
+        for file in files:
+            torrent_id = file[0]
+            torrent_file_paths = seen_files.setdefault(torrent_id, set())
+            file_index = len(torrent_file_paths)
+            if file_index >= add_files_limit:
+                continue
+            file_path = decode_with_fallback(file[2])
+            if file_path in torrent_file_paths:
+                tqdm.write(f"Duplicated file path '{file_path}' in torrent {torrent_id}")
+                continue
+            file_size = file[1]
+
+            if import_padding or (
+                "_____padding" not in file_path and ".____padding" not in file_path
+            ):
+                torrent = next(
+                    torrent for torrent in torrents if torrent[0] == torrent_id
+                )
+                yield (torrent[1], file_index, file_path, file_size, now, now)
+                torrent_file_paths.add(file_path)
+        files = sqlite_cursor.fetchmany()
+
+
+def insert_torrent_files_copy(
+    copy_manager, sqlite_conn, torrents, add_files_limit, import_padding
+):
+    sqlite_cursor = sqlite_conn.cursor()
+    sqlite_cursor.arraysize = 1000
+    sqlite_cursor.execute(
+        f"SELECT torrent_id, size, path FROM files WHERE torrent_id IN ({','.join(['?'] * len(torrents))})",
+        [torrent[0] for torrent in torrents],
+    )
+
+    files = get_file_details_copy(
+        sqlite_cursor, torrents, add_files_limit, import_padding
+    )
+    copy_manager.threading_copy(files)
 
 
 def insert_torrent(pg_cursor, torrents):
@@ -172,6 +231,21 @@ def process_magnetico_database(
     force_import,
     batch_size=1000,
 ):
+    if pgcopy is not None:
+        file_copy_manager = pgcopy.CopyManager(
+            pg_cursor.connection,
+            "torrent_files",
+            ("info_hash", "index", "path", "size", "created_at", "updated_at"),
+        )
+        source_copy_manager = pgcopy.CopyManager(
+            pg_cursor.connection,
+            "torrents_torrent_sources",
+            ("source", "info_hash", "published_at", "created_at", "updated_at"),
+        )
+    else:
+        tqdm.write("[INFO]|[Perf]: pgcopy isn't available, insertion will be slower")
+        file_copy_manager = source_copy_manager = content_copy_manager = None
+
     sqlite_conn.text_factory = bytes
     tqdm.write("[INFO]|[SQLite]: Getting amount of records...")
     total_count = sqlite_conn.execute("SELECT COUNT(*) FROM torrents").fetchone()[0]
@@ -212,27 +286,42 @@ def process_magnetico_database(
                     )
                     for inserted_hash in inserted_hashes
                 ]
-                for inserted_torrent in inserted:
-                    if add_files:
-                        files = files_cursor.execute(
-                            "SELECT size, path FROM files WHERE torrent_id = ?",
-                            (inserted_torrent[0],),
+                if add_files:
+                    if file_copy_manager is not None:
+                        insert_torrent_files_copy(
+                            file_copy_manager,
+                            sqlite_conn,
+                            inserted,
+                            add_files_limit,
+                            import_padding,
                         )
-                        file_details = get_file_details(
-                            inserted_torrent, add_files_limit, files, import_padding
-                        )
-                        all_empty = all(path == b'' for _, path in file_details)
-                        if all_empty:
-                            if force_import:
-                                tqdm.write(f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, force importing.")
-                            if not force_import:
-                                tqdm.write(f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, skipping.")
-                                continue
-                        insert_torrent_files(
-                            pg_cursor, inserted_torrent[1], file_details
-                        )
+                    else:
+                        for inserted_torrent in inserted:
+                            files = files_cursor.execute(
+                                "SELECT size, path FROM files WHERE torrent_id = ?",
+                                (inserted_torrent[0],),
+                            )
+                            file_details = get_file_details(
+                                inserted_torrent, add_files_limit, files, import_padding
+                            )
+                            all_empty = all(
+                                details[1] == "" for details in file_details
+                            )
+                            if all_empty:
+                                if force_import:
+                                    tqdm.write(
+                                        f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, force importing."
+                                    )
+                                if not force_import:
+                                    tqdm.write(
+                                        f"[INFO]|[DATA]: Record with id {inserted_torrent[0]} only contains empty filenames, skipping."
+                                    )
+                                    continue
+                            insert_torrent_files(
+                                pg_cursor, inserted_torrent[1], file_details
+                            )
 
-                insert_torrent_source(pg_cursor, source_name, inserted)
+                insert_torrent_source(pg_cursor, source_name, inserted, source_copy_manager)
                 if insert_content:
                     insert_torrent_content(pg_cursor, inserted)
             finally:
